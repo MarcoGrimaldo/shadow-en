@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   Play,
   Pause,
@@ -33,6 +35,7 @@ export default function BrowserTranscription({
   onError,
 }: BrowserTranscriptionProps) {
   const router = useRouter();
+  const { user, accessToken } = useAuth();
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [segments, setSegments] = useState<TranscriptionSegment[]>([]);
   const [currentText, setCurrentText] = useState("");
@@ -263,11 +266,16 @@ export default function BrowserTranscription({
           ];
 
     // Convert segments to the format expected by practice page
-    const pauses = finalSegments.map((segment) => ({
-      id: segment.id,
+    const pauses = finalSegments.map((segment, index) => ({
+      id: index + 1,
       time: segment.time,
       subtitle: segment.subtitle,
     }));
+
+    if (pauses.length === 0) {
+      alert("No segments found to create practice session.");
+      return;
+    }
 
     // Store data in sessionStorage for the practice page
     sessionStorage.setItem(
@@ -350,23 +358,38 @@ export default function BrowserTranscription({
       return false;
     }
 
+    // Check if user is authenticated
+    if (!user) {
+      alert("Please sign in to save lessons");
+      return false;
+    }
+
+    if (!accessToken) {
+      alert("No authentication token available. Please sign in again.");
+      return false;
+    }
+
     setIsSavingLesson(true);
     try {
       const response = await fetch("/api/lessons", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           title: lessonTitle.trim(),
-          videoId,
-          videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          video_id: videoId,
+          video_url: `https://www.youtube.com/watch?v=${videoId}`,
           pauses,
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to save lesson");
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to save lesson: ${response.status} ${errorText}`
+        );
       }
 
       const savedLesson = await response.json();
@@ -374,7 +397,9 @@ export default function BrowserTranscription({
       return true;
     } catch (error) {
       console.error("Error saving lesson:", error);
-      alert("Failed to save lesson. Please try again.");
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      alert(`Failed to save lesson: ${errorMessage}. Please try again.`);
       return false;
     } finally {
       setIsSavingLesson(false);
@@ -389,11 +414,16 @@ export default function BrowserTranscription({
     }
 
     // Convert segments to the format expected by practice page
-    const pauses = finalSegments.map((segment) => ({
-      id: segment.id,
+    const pauses = finalSegments.map((segment, index) => ({
+      id: index + 1,
       time: segment.time,
       subtitle: segment.subtitle,
     }));
+
+    if (pauses.length === 0) {
+      alert("No segments found to create practice session.");
+      return;
+    }
 
     // Save lesson to API
     const lessonSaved = await saveLesson(pauses);

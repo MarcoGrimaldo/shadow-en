@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-
-const LESSONS_FILE = path.join(process.cwd(), "data", "lessons.json");
+import { supabase, supabaseAdmin } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 interface Pause {
   id: number;
@@ -10,97 +8,237 @@ interface Pause {
   subtitle: string;
 }
 
-interface Lesson {
-  id: string;
-  title: string;
-  videoId: string;
-  videoUrl: string;
-  pauses: Pause[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-// Ensure data directory and lessons file exist
-async function ensureLessonsFile() {
-  const dataDir = path.dirname(LESSONS_FILE);
-
+// GET - Retrieve all public lessons with user information
+export async function GET(request: NextRequest) {
   try {
-    await fs.access(dataDir);
-  } catch {
-    await fs.mkdir(dataDir, { recursive: true });
-  }
+    const url = new URL(request.url);
+    const userId = url.searchParams.get("user_id"); // Optional: filter by user
 
-  try {
-    await fs.access(LESSONS_FILE);
-  } catch {
-    await fs.writeFile(LESSONS_FILE, JSON.stringify([]));
-  }
-}
+    let query = supabase
+      .from("lessons")
+      .select(
+        `
+        *,
+        users (
+          id,
+          username,
+          avatar_url
+        )
+      `
+      )
+      .eq("is_public", true)
+      .order("created_at", { ascending: false });
 
-// GET - Retrieve all lessons
-export async function GET() {
-  try {
-    await ensureLessonsFile();
-    const lessonsData = await fs.readFile(LESSONS_FILE, "utf-8");
-    const lessons: Lesson[] = JSON.parse(lessonsData);
+    // If user_id is provided, filter by that user
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
 
-    return NextResponse.json(lessons);
-  } catch (error) {
-    console.error("Error reading lessons:", error);
-    return NextResponse.json([], { status: 500 });
-  }
-}
+    const { data: lessons, error } = await query;
 
-// POST - Save a new lesson
-export async function POST(request: NextRequest) {
-  try {
-    await ensureLessonsFile();
-
-    const body = await request.json();
-    const { title, videoId, videoUrl, pauses } = body;
-
-    if (!title || !videoId || !videoUrl || !pauses) {
+    if (error) {
+      console.error("Error fetching lessons:", error);
       return NextResponse.json(
-        { error: "Missing required fields: title, videoId, videoUrl, pauses" },
-        { status: 400 }
+        { error: "Failed to fetch lessons" },
+        { status: 500 }
       );
     }
 
-    // Read existing lessons
-    const lessonsData = await fs.readFile(LESSONS_FILE, "utf-8");
-    const lessons: Lesson[] = JSON.parse(lessonsData);
-
-    // Create new lesson
-    const newLesson: Lesson = {
-      id: `lesson-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title,
-      videoId,
-      videoUrl,
-      pauses,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Add to lessons array
-    lessons.push(newLesson);
-
-    // Save back to file
-    await fs.writeFile(LESSONS_FILE, JSON.stringify(lessons, null, 2));
-
-    return NextResponse.json(newLesson, { status: 201 });
+    return NextResponse.json(lessons || []);
   } catch (error) {
-    console.error("Error saving lesson:", error);
+    console.error("Error fetching lessons:", error);
     return NextResponse.json(
-      { error: "Failed to save lesson" },
+      { error: "Failed to fetch lessons" },
       { status: 500 }
     );
   }
 }
 
-// DELETE - Delete a lesson by ID
+// POST - Create a new lesson
+export async function POST(request: NextRequest) {
+  try {
+    console.log("POST /api/lessons - Starting request");
+
+    // Get the authorization header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authentication required - missing or invalid token" },
+        { status: 401 }
+      );
+    }
+
+    // Extract the JWT token
+    const token = authHeader.replace("Bearer ", "");
+    console.log("Received token length:", token.length);
+
+    // Verify token with Supabase
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError) {
+      console.error("Auth verification error:", authError);
+      return NextResponse.json(
+        { error: `Authentication failed: ${authError.message}` },
+        { status: 401 }
+      );
+    }
+
+    if (!user) {
+      console.error("No user found for token");
+      return NextResponse.json(
+        { error: "Invalid token - no user found" },
+        { status: 401 }
+      );
+    }
+
+    console.log("Authenticated user:", user.id, user.email);
+    console.log("User auth metadata:", user.user_metadata);
+    console.log("Token preview:", token.substring(0, 50) + "...");
+
+    // Ensure user profile exists in users table (use admin client to bypass RLS)
+    const { data: existingUser, error: userCheckError } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("id", user.id)
+      .single();
+
+    if (userCheckError && userCheckError.code === "PGRST116") {
+      // User doesn't exist, create profile using admin client
+      console.log("Creating user profile for:", user.id);
+      const { error: createUserError } = await supabaseAdmin
+        .from("users")
+        .insert({
+          id: user.id,
+          email: user.email || "",
+          username:
+            user.email?.split("@")[0] + "_" + user.id.substring(0, 8) ||
+            "user_" + user.id.substring(0, 8),
+        });
+
+      if (createUserError) {
+        console.error("Error creating user profile:", createUserError);
+        return NextResponse.json(
+          {
+            error: `Failed to create user profile: ${createUserError.message}`,
+          },
+          { status: 500 }
+        );
+      }
+      console.log("User profile created successfully");
+    } else if (userCheckError) {
+      console.error("Error checking user profile:", userCheckError);
+      return NextResponse.json(
+        { error: `Database error: ${userCheckError.message}` },
+        { status: 500 }
+      );
+    } else {
+      console.log("User profile already exists");
+    }
+
+    const body = await request.json();
+    const { title, video_id, video_url, pauses, is_public = true } = body;
+
+    if (!title || !video_id || !video_url || !pauses) {
+      return NextResponse.json(
+        {
+          error: "Missing required fields: title, video_id, video_url, pauses",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create a Supabase client with the user's auth token for RLS context
+    const userSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+
+    // Insert the lesson using the authenticated client
+    // RLS policies will handle the authorization
+    const { data: lesson, error } = await userSupabase
+      .from("lessons")
+      .insert({
+        title,
+        video_id,
+        video_url,
+        pauses,
+        user_id: user.id,
+        is_public,
+      })
+      .select(
+        `
+        *,
+        users (
+          id,
+          username,
+          avatar_url
+        )
+      `
+      )
+      .single();
+
+    if (error) {
+      console.error("Error creating lesson:", error);
+      console.error("Error details:", JSON.stringify(error, null, 2));
+      console.error("Lesson data being inserted:", {
+        title,
+        video_id,
+        video_url,
+        user_id: user.id,
+        is_public,
+        pauses_length: Array.isArray(pauses) ? pauses.length : "not_array",
+      });
+      return NextResponse.json(
+        { error: `Failed to create lesson: ${error.message}` },
+        { status: 500 }
+      );
+    }
+
+    console.log("Lesson created successfully:", lesson.id);
+    return NextResponse.json(lesson, { status: 201 });
+  } catch (error: any) {
+    console.error("Unexpected error creating lesson:", error);
+    return NextResponse.json(
+      { error: `Server error: ${error.message}` },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Delete a lesson (only by owner)
 export async function DELETE(request: NextRequest) {
   try {
-    await ensureLessonsFile();
+    // Get the user from the session
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: "Invalid authentication" },
+        { status: 401 }
+      );
+    }
 
     const url = new URL(request.url);
     const lessonId = url.searchParams.get("id");
@@ -109,19 +247,37 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Missing lesson ID" }, { status: 400 });
     }
 
-    // Read existing lessons
-    const lessonsData = await fs.readFile(LESSONS_FILE, "utf-8");
-    const lessons: Lesson[] = JSON.parse(lessonsData);
+    // Check if the lesson exists and belongs to the user
+    const { data: lesson, error: fetchError } = await supabase
+      .from("lessons")
+      .select("user_id")
+      .eq("id", lessonId)
+      .single();
 
-    // Filter out the lesson to delete
-    const updatedLessons = lessons.filter((lesson) => lesson.id !== lessonId);
-
-    if (updatedLessons.length === lessons.length) {
+    if (fetchError || !lesson) {
       return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
     }
 
-    // Save back to file
-    await fs.writeFile(LESSONS_FILE, JSON.stringify(updatedLessons, null, 2));
+    if (lesson.user_id !== user.id) {
+      return NextResponse.json(
+        { error: "You can only delete your own lessons" },
+        { status: 403 }
+      );
+    }
+
+    // Delete the lesson
+    const { error: deleteError } = await supabase
+      .from("lessons")
+      .delete()
+      .eq("id", lessonId);
+
+    if (deleteError) {
+      console.error("Error deleting lesson:", deleteError);
+      return NextResponse.json(
+        { error: "Failed to delete lesson" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ message: "Lesson deleted successfully" });
   } catch (error) {

@@ -1,405 +1,224 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Play, Plus, X, Wand2, Mic, AlertCircle } from "lucide-react";
-import {
-  formatTime,
-  parseTimeInput,
-  getYouTubeVideoId,
-  isValidYouTubeUrl,
-  extractYouTubeSubtitles,
-  convertSubtitlesToPauses,
-} from "@/utils/helpers";
-import BrowserTranscription from "@/components/BrowserTranscription";
-import ManualTranscription from "@/components/ManualTranscription";
+import { useAuth } from "@/contexts/AuthContext";
+import { Play, Calendar, User, Clock } from "lucide-react";
+import { formatTime } from "@/utils/helpers";
 
-interface Pause {
-  id: number;
-  time: number;
-  subtitle: string;
+interface Lesson {
+  id: string;
+  title: string;
+  video_id: string;
+  video_url: string;
+  pauses: Array<{
+    id: number;
+    time: number;
+    subtitle: string;
+  }>;
+  created_at: string;
+  users?: {
+    username: string;
+  };
 }
 
 export default function Home() {
   const router = useRouter();
-  const [videoUrl, setVideoUrl] = useState("");
-  const [pauses, setPauses] = useState<Pause[]>([]);
-  const [newPauseTime, setNewPauseTime] = useState("");
-  const [newSubtitle, setNewSubtitle] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isGeneratingSubtitles, setIsGeneratingSubtitles] = useState(false);
-  const [subtitleError, setSubtitleError] = useState("");
-  const [videoInfo, setVideoInfo] = useState<{
-    duration?: number;
-    segments?: number;
-  } | null>(null);
-  const [showBrowserTranscription, setShowBrowserTranscription] =
-    useState(false);
-  const [showManualTranscription, setShowManualTranscription] = useState(false);
-  const [currentVideoId, setCurrentVideoId] = useState("");
+  const { user } = useAuth();
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Utility functions are now imported from helpers
+  useEffect(() => {
+    fetchLessons();
+  }, []);
 
-  const addPause = () => {
-    if (newPauseTime && newSubtitle) {
-      const timeInSeconds = parseTimeInput(newPauseTime);
-      if (timeInSeconds <= 60) {
-        // 1 minute limit
-        const newPause: Pause = {
-          id: Date.now(),
-          time: timeInSeconds,
-          subtitle: newSubtitle,
-        };
-        setPauses([...pauses, newPause].sort((a, b) => a.time - b.time));
-        setNewPauseTime("");
-        setNewSubtitle("");
-      } else {
-        alert("Video duration is limited to 1 minute (0:60)");
-      }
-    }
-  };
-
-  const removePause = (id: number) => {
-    setPauses(pauses.filter((p) => p.id !== id));
-  };
-
-  const generateSubtitles = async () => {
-    if (!isValidYouTubeUrl(videoUrl)) {
-      setSubtitleError("Please enter a valid YouTube URL first");
-      return;
-    }
-
-    setIsGeneratingSubtitles(true);
-    setSubtitleError("");
-    setVideoInfo(null);
-    setShowBrowserTranscription(false);
-    setShowManualTranscription(false);
-
+  const fetchLessons = async () => {
     try {
-      const result = await extractYouTubeSubtitles(videoUrl);
+      setLoading(true);
+      const response = await fetch("/api/lessons");
 
-      if (result.success && result.subtitles) {
-        const newPauses = convertSubtitlesToPauses(result.subtitles);
-        setPauses(newPauses);
-        setVideoInfo({
-          duration: result.duration,
-          segments: result.totalSegments,
-        });
-        setSubtitleError("");
-      } else if (result.requiresBrowserTranscription) {
-        // YouTube captions not available, show browser transcription option
-        const videoId = getYouTubeVideoId(videoUrl);
-        if (videoId) {
-          setCurrentVideoId(videoId);
-          setShowBrowserTranscription(true);
-          setSubtitleError("");
-        }
-      } else {
-        throw new Error(result.error || "Failed to generate subtitles");
+      if (!response.ok) {
+        throw new Error("Failed to fetch lessons");
       }
-    } catch (error: any) {
-      console.error("Subtitle generation error:", error);
-      setSubtitleError(
-        error.message ||
-          "Failed to generate subtitles. Please try a different video."
-      );
-      setPauses([]);
-      setVideoInfo(null);
+
+      const data = await response.json();
+      setLessons(Array.isArray(data) ? data : data.lessons || []);
+    } catch (error) {
+      console.error("Error fetching lessons:", error);
+      setError("Failed to load lessons");
     } finally {
-      setIsGeneratingSubtitles(false);
+      setLoading(false);
     }
   };
 
-  const handleBrowserTranscriptionComplete = (segments: any[]) => {
-    const newPauses = convertSubtitlesToPauses(segments);
-    setPauses(newPauses);
-    setVideoInfo({
-      duration:
-        segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 30,
-      segments: segments.length,
-    });
-    setShowBrowserTranscription(false);
-    setSubtitleError("");
-  };
-
-  const handleBrowserTranscriptionError = (error: string) => {
-    setSubtitleError(error);
-    setShowBrowserTranscription(false);
-  };
-
-  const handleManualTranscriptionComplete = (segments: any[]) => {
-    const newPauses = convertSubtitlesToPauses(segments);
-    setPauses(newPauses);
-    setVideoInfo({
-      duration:
-        segments.length > 0 ? Math.max(...segments.map((s) => s.end)) : 30,
-      segments: segments.length,
-    });
-    setShowManualTranscription(false);
-    setSubtitleError("");
-  };
-
-  const handleManualTranscriptionError = (error: string) => {
-    setSubtitleError(error);
-    setShowManualTranscription(false);
-  };
-  const clearSubtitles = () => {
-    setPauses([]);
-    setSubtitleError("");
-    setVideoInfo(null);
-  };
-
-  const startPractice = () => {
-    if (!isValidYouTubeUrl(videoUrl)) {
-      alert("Please enter a valid YouTube URL");
-      return;
-    }
-
-    const videoId = getYouTubeVideoId(videoUrl);
-    if (pauses.length === 0) {
-      alert("Please add at least one pause point");
-      return;
-    }
-
+  const startPractice = (lesson: Lesson) => {
     // Store data in sessionStorage for the practice page
     sessionStorage.setItem(
       "shadowPractice",
       JSON.stringify({
-        videoId,
-        pauses,
-        videoUrl,
+        videoId: lesson.video_id,
+        pauses: lesson.pauses,
+        videoUrl: lesson.video_url,
       })
     );
 
     router.push("/practice");
   };
 
+  const getTotalDuration = (pauses: any[]) => {
+    if (!pauses || pauses.length === 0) return 0;
+    return Math.max(...pauses.map((p) => p.time)) + 5; // Add 5 seconds buffer
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading lessons...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Navigation */}
-        <nav className="flex justify-between items-center mb-6 pt-4">
-          <div className="text-xl font-bold text-gray-800">Shadow English</div>
-          <button
-            onClick={() => router.push("/lessons")}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-          >
-            📚 My Lessons
-          </button>
-        </nav>
-
-        <header className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">
-            Create New Lesson
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Hero Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Welcome to Shadow English
           </h1>
-          <p className="text-lg text-gray-600">
-            Practice English pronunciation with the shadow technique
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            Improve your English pronunciation with the shadow technique.
+            Practice with lessons created by our community or create your own.
           </p>
-        </header>
+        </div>
 
-        <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
-          <h2 className="text-2xl font-semibold mb-6">
-            Setup Your Practice Session
-          </h2>
-
-          {/* Video URL Input */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              YouTube Video URL
-            </label>
-            <div className="flex gap-3">
-              <input
-                type="url"
-                value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=... or https://youtube.com/shorts/..."
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <button
-                onClick={() => generateSubtitles()}
-                disabled={!videoUrl || isGeneratingSubtitles}
-                className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 font-medium whitespace-nowrap"
-              >
-                {isGeneratingSubtitles ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-4 h-4" />
-                    Get Captions
-                  </>
-                )}
-              </button>
+        {/* Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
+            <div className="text-3xl font-bold text-blue-600">
+              {lessons.length}
             </div>
-            <div className="flex justify-between items-center mt-2">
-              <p className="text-sm text-gray-500">
-                Supports regular videos, YouTube Shorts, and mobile URLs (max 1
-                minute)
-              </p>
-              {videoInfo && (
-                <p className="text-sm text-green-600 font-medium">
-                  ✓ Found {videoInfo.segments} segments ({videoInfo.duration}s)
-                </p>
+            <div className="text-gray-600">Total Lessons</div>
+          </div>
+          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
+            <div className="text-3xl font-bold text-green-600">
+              {lessons.reduce(
+                (acc, lesson) => acc + (lesson.pauses?.length || 0),
+                0
               )}
             </div>
-
-            {/* Error Display */}
-            {subtitleError && (
-              <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-lg">
-                <div className="flex items-start gap-2 mb-3">
-                  <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-red-700 flex-1">
-                    <p className="font-medium">Failed to generate subtitles</p>
-                    <p>{subtitleError}</p>
-                  </div>
-                </div>
-
-                {/* Transcription Options */}
-                {!showBrowserTranscription && !showManualTranscription && (
-                  <div className="border-t border-red-200 pt-3 space-y-3">
-                    <p className="text-sm font-medium text-red-800 mb-2">
-                      🎤 No captions available? Choose a transcription method:
-                    </p>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <button
-                        onClick={() => {
-                          const videoId = getYouTubeVideoId(videoUrl);
-                          if (videoId) {
-                            setCurrentVideoId(videoId);
-                            setShowBrowserTranscription(true);
-                            setSubtitleError("");
-                          }
-                        }}
-                        className="p-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors text-left"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Mic className="w-4 h-4" />
-                          <span className="font-semibold">
-                            🎤 Voice Transcription
-                          </span>
-                        </div>
-                        <p className="text-xs text-blue-100">
-                          Watch video and speak along - your voice will be
-                          transcribed
-                        </p>
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          const videoId = getYouTubeVideoId(videoUrl);
-                          if (videoId) {
-                            setCurrentVideoId(videoId);
-                            setShowManualTranscription(true);
-                            setSubtitleError("");
-                          }
-                        }}
-                        className="p-4 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors text-left"
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Plus className="w-4 h-4" />
-                          <span className="font-semibold">✍️ Manual Entry</span>
-                        </div>
-                        <p className="text-xs text-green-100">
-                          Watch video and type subtitles manually with timing
-                        </p>
-                      </button>
-                    </div>
-
-                    <p className="text-xs text-red-600">
-                      Both methods will create practice segments for shadow
-                      technique training.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Browser Transcription Component */}
-            {showBrowserTranscription && (
-              <BrowserTranscription
-                videoId={currentVideoId}
-                onTranscriptionComplete={handleBrowserTranscriptionComplete}
-                onError={handleBrowserTranscriptionError}
-              />
-            )}
-
-            {/* Manual Transcription Component */}
-            {showManualTranscription && (
-              <ManualTranscription
-                videoId={currentVideoId}
-                onTranscriptionComplete={handleManualTranscriptionComplete}
-                onError={handleManualTranscriptionError}
-              />
-            )}
+            <div className="text-gray-600">Practice Segments</div>
+          </div>
+          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
+            <div className="text-3xl font-bold text-purple-600">
+              {Math.round(
+                lessons.reduce(
+                  (acc, lesson) => acc + getTotalDuration(lesson.pauses || []),
+                  0
+                ) / 60
+              )}
+            </div>
+            <div className="text-gray-600">Minutes of Content</div>
           </div>
         </div>
 
-        {/* Instructions */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h3 className="text-xl font-semibold mb-4">How it works</h3>
-          <div className="space-y-3 text-gray-600">
-            <div className="flex gap-3">
-              <span className="bg-purple-100 text-purple-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                1
-              </span>
-              <p>
-                Paste any YouTube URL (videos, Shorts, max 1 minute) and click{" "}
-                <strong className="text-purple-700">"Get Captions"</strong> to
-                extract subtitles automatically
+        {/* Lessons Grid */}
+        <div className="mb-8">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">All Lessons</h2>
+            {!user && (
+              <p className="text-sm text-gray-600">
+                Sign in to create your own lessons
               </p>
-            </div>
-            <div className="flex gap-3">
-              <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                2
-              </span>
-              <p>
-                If captions aren't available, use voice transcription or manual
-                entry to create your practice session
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <span className="bg-green-100 text-green-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                3
-              </span>
-              <p>
-                Practice by listening and repeating when the video pauses at
-                each segment
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <span className="bg-orange-100 text-orange-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                4
-              </span>
-              <p>
-                Get real-time pronunciation accuracy feedback and track your
-                progress
-              </p>
-            </div>
+            )}
           </div>
 
-          <div className="mt-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-            <div className="flex items-start gap-3">
-              <Wand2 className="w-5 h-5 text-purple-600 mt-0.5" />
-              <div>
-                <p className="font-medium text-purple-800 mb-1">
-                  ✨ Smart Subtitle Generation
-                </p>
-                <p className="text-sm text-purple-700">
-                  Our system first tries to extract YouTube captions. If
-                  captions aren't available, you can use browser transcription
-                  to generate subtitles in real-time using your device's
-                  microphone and speech recognition!
-                </p>
-                <div className="mt-2 text-xs text-purple-600">
-                  <strong>Methods:</strong> YouTube Captions → Browser
-                  Transcription (100% Free)
-                </div>
-              </div>
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <p className="text-red-700">{error}</p>
             </div>
-          </div>
+          )}
+
+          {lessons.length === 0 && !loading && !error ? (
+            <div className="bg-white rounded-lg p-12 text-center shadow-sm">
+              <div className="text-gray-400 mb-4">
+                <Play className="w-16 h-16 mx-auto" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-700 mb-2">
+                No lessons yet
+              </h3>
+              <p className="text-gray-600 mb-6">
+                Be the first to create a lesson and start practicing!
+              </p>
+              {user && (
+                <button
+                  onClick={() => router.push("/create")}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Create First Lesson
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {lessons.map((lesson) => (
+                <div
+                  key={lesson.id}
+                  className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200"
+                >
+                  {/* YouTube Thumbnail */}
+                  <div className="aspect-video bg-gray-100 rounded-t-lg overflow-hidden">
+                    <img
+                      src={`https://img.youtube.com/vi/${lesson.video_id}/mqdefault.jpg`}
+                      alt={lesson.title}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  <div className="p-6">
+                    <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
+                      {lesson.title}
+                    </h3>
+
+                    {/* Creator Info */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
+                      <User className="w-4 h-4" />
+                      <span>
+                        Created by: @{lesson.users?.username || "unknown"}
+                      </span>
+                    </div>
+
+                    {/* Lesson Stats */}
+                    <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-4 h-4" />
+                        <span>{lesson.pauses?.length || 0} segments</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        <span>
+                          {new Date(lesson.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Practice Button */}
+                    <button
+                      onClick={() => startPractice(lesson)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                    >
+                      <Play className="w-4 h-4" />
+                      Start Practice
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

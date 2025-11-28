@@ -2,6 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   Play,
   Pause,
@@ -14,17 +16,15 @@ import {
   Loader2,
 } from "lucide-react";
 
-interface TranscriptionSegment {
+interface PausePoint {
   id: number;
   time: number;
   subtitle: string;
-  duration: number;
-  end: number;
 }
 
 interface ManualTranscriptionProps {
   videoId: string;
-  onTranscriptionComplete: (segments: TranscriptionSegment[]) => void;
+  onTranscriptionComplete: (segments: PausePoint[]) => void;
   onError: (error: string) => void;
 }
 
@@ -34,48 +34,43 @@ export default function ManualTranscription({
   onError,
 }: ManualTranscriptionProps) {
   const router = useRouter();
-  const [segments, setSegments] = useState<TranscriptionSegment[]>([
-    { id: 1, time: 0, subtitle: "", duration: 5, end: 5 },
+  const { user, accessToken } = useAuth();
+  const [pausePoints, setPausePoints] = useState<PausePoint[]>([
+    { id: 1, time: 5, subtitle: "" },
   ]);
   const [currentSegmentId, setCurrentSegmentId] = useState(1);
   const [lessonTitle, setLessonTitle] = useState("");
   const [isSavingLesson, setIsSavingLesson] = useState(false);
   const videoRef = useRef<HTMLIFrameElement>(null);
 
-  const addSegment = () => {
-    const lastSegment = segments[segments.length - 1];
-    const newStartTime = lastSegment ? lastSegment.end : 0;
-    const newSegment: TranscriptionSegment = {
-      id: segments.length + 1,
-      time: newStartTime,
+  const addPausePoint = () => {
+    const lastPause = pausePoints[pausePoints.length - 1];
+    const newTime = lastPause ? lastPause.time + 5 : 5;
+    const newPause: PausePoint = {
+      id: pausePoints.length + 1,
+      time: newTime,
       subtitle: "",
-      duration: 5,
-      end: newStartTime + 5,
     };
-    setSegments([...segments, newSegment]);
+    setPausePoints([...pausePoints, newPause]);
   };
 
-  const removeSegment = (id: number) => {
-    if (segments.length > 1) {
-      setSegments(segments.filter((seg) => seg.id !== id));
+  const removePausePoint = (id: number) => {
+    if (pausePoints.length > 1) {
+      setPausePoints(pausePoints.filter((pause) => pause.id !== id));
     }
   };
 
-  const updateSegment = (
+  const updatePausePoint = (
     id: number,
-    field: keyof TranscriptionSegment,
+    field: keyof PausePoint,
     value: any
   ) => {
-    setSegments(
-      segments.map((seg) => {
-        if (seg.id === id) {
-          const updated = { ...seg, [field]: value };
-          if (field === "time" || field === "duration") {
-            updated.end = updated.time + updated.duration;
-          }
-          return updated;
+    setPausePoints(
+      pausePoints.map((pause) => {
+        if (pause.id === id) {
+          return { ...pause, [field]: value };
         }
-        return seg;
+        return pause;
       })
     );
   };
@@ -94,56 +89,105 @@ export default function ManualTranscription({
   };
 
   const saveLesson = async () => {
+    console.log("🚀 saveLesson called!");
+
+    if (isSavingLesson) {
+      console.log("❌ Already saving, returning");
+      return;
+    }
+
     if (!lessonTitle.trim()) {
+      console.log("❌ No title provided");
       alert("Please enter a lesson title");
       return;
     }
 
-    const validSegments = segments.filter(
-      (seg) => seg.subtitle.trim().length > 0
+    const validPauses = pausePoints.filter(
+      (pause) => pause.subtitle.trim().length > 0
+    );
+    console.log(
+      "📝 Valid pause points:",
+      validPauses.length,
+      "out of",
+      pausePoints.length
     );
 
-    if (validSegments.length === 0) {
-      onError("Please add at least one subtitle segment with text");
+    if (validPauses.length === 0) {
+      console.log("❌ No valid pause points found");
+      onError("Please add at least one pause point with text");
       return;
     }
+    console.log("✅ Segments validation passed");
 
-    // Sort segments by time and validate
-    const sortedSegments = validSegments
-      .sort((a, b) => a.time - b.time)
-      .map((seg, index) => ({ ...seg, id: index + 1 }));
+    console.log("👤 User check:", !!user, user?.id);
+    if (!user) {
+      console.log("❌ No user found");
+      alert("Please sign in to save lessons");
+      return;
+    }
+    console.log("✅ User validation passed");
 
-    // Convert to pause format
-    const pauses = sortedSegments.map((segment) => ({
-      id: segment.id,
-      time: segment.time,
-      subtitle: segment.subtitle,
-    }));
-
+    console.log("🔄 Setting saving state to true");
     setIsSavingLesson(true);
+
+    console.log("🎯 Entering try block");
     try {
-      // Save lesson to API
+      console.log("🔑 Using accessToken from AuthContext...");
+
+      if (!accessToken) {
+        console.log("❌ No access token available from AuthContext");
+        throw new Error(
+          "No authentication token available. Please sign in again."
+        );
+      }
+
+      console.log(
+        "✅ Got access token from context:",
+        accessToken.length,
+        "characters"
+      );
+      console.log("✅ Authentication ready - proceeding with save!");
+
+      const pauses = validPauses
+        .sort((a, b) => a.time - b.time)
+        .map((pause, index) => ({ ...pause, id: index + 1 }));
+
+      if (pauses.length === 0) {
+        throw new Error("No valid pause points found.");
+      }
+
+      const lessonData = {
+        title: lessonTitle.trim(),
+        video_id: videoId,
+        video_url: `https://www.youtube.com/watch?v=${videoId}`,
+        pauses,
+      };
+
+      console.log("🚀 Making API call to /api/lessons...");
       const response = await fetch("/api/lessons", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          title: lessonTitle.trim(),
-          videoId,
-          videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
-          pauses,
-        }),
+        body: JSON.stringify(lessonData),
       });
 
+      console.log(
+        "📡 API call completed:",
+        response.status,
+        response.statusText
+      );
+
       if (!response.ok) {
-        throw new Error("Failed to save lesson");
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to save lesson: ${response.status} ${errorText}`
+        );
       }
 
       const savedLesson = await response.json();
-      console.log("Lesson saved:", savedLesson);
 
-      // Store data in sessionStorage for the practice page
       sessionStorage.setItem(
         "shadowPractice",
         JSON.stringify({
@@ -153,11 +197,11 @@ export default function ManualTranscription({
         })
       );
 
-      // Navigate to practice page
       router.push("/practice");
     } catch (error) {
-      console.error("Error saving lesson:", error);
-      alert("Failed to save lesson. Please try again.");
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      alert(`Failed to save lesson: ${errorMessage}`);
     } finally {
       setIsSavingLesson(false);
     }
@@ -183,116 +227,76 @@ export default function ManualTranscription({
       {/* Manual Subtitle Editor */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Manual Subtitle Editor</h3>
+          <h3 className="text-lg font-semibold">➕ Add Pause Points</h3>
           <button
-            onClick={addSegment}
+            onClick={addPausePoint}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
           >
             <Plus className="w-4 h-4" />
-            Add Segment
+            Add
           </button>
         </div>
 
-        {/* Segments List */}
-        <div className="space-y-3 max-h-96 overflow-y-auto">
-          {segments.map((segment) => (
-            <div
-              key={segment.id}
-              className={`border-2 rounded-lg p-4 transition-colors ${
-                currentSegmentId === segment.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-200 bg-white"
-              }`}
-            >
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                {/* Time Controls */}
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700">
-                    Start Time (seconds)
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <input
-                      type="number"
-                      value={segment.time}
-                      onChange={(e) =>
-                        updateSegment(
-                          segment.id,
-                          "time",
-                          Number(e.target.value)
-                        )
-                      }
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                      min="0"
-                      step="0.5"
-                    />
+        {/* Pause Points List */}
+        {pausePoints.length > 0 && (
+          <div className="space-y-2 max-h-40 overflow-y-auto">
+            {pausePoints
+              .slice()
+              .reverse()
+              .map((pause, reverseIndex) => {
+                const originalIndex = pausePoints.length - 1 - reverseIndex;
+                return (
+                  <div
+                    key={pause.id}
+                    className="flex items-center justify-between bg-white p-3 rounded-lg border"
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">
+                        {originalIndex + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={
+                          Math.floor(pause.time / 60) +
+                          ":" +
+                          (pause.time % 60).toString().padStart(2, "0")
+                        }
+                        onChange={(e) => {
+                          const parts = e.target.value.split(":");
+                          if (parts.length === 2) {
+                            const minutes = parseInt(parts[0]) || 0;
+                            const seconds = parseInt(parts[1]) || 0;
+                            updatePausePoint(
+                              pause.id,
+                              "time",
+                              minutes * 60 + seconds
+                            );
+                          }
+                        }}
+                        placeholder="0:10"
+                        className="w-20 px-2 py-1 border border-gray-300 rounded text-sm font-mono bg-purple-100"
+                      />
+                      <input
+                        type="text"
+                        value={pause.subtitle}
+                        onChange={(e) =>
+                          updatePausePoint(pause.id, "subtitle", e.target.value)
+                        }
+                        placeholder="Copy text from transcript above"
+                        className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
                     <button
-                      onClick={() => seekToTime(segment.time)}
-                      className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs"
-                      title="Seek to this time"
+                      onClick={() => removePausePoint(pause.id)}
+                      className="text-red-500 hover:text-red-700 p-1 ml-2"
                     >
-                      <Play className="w-3 h-3" />
+                      ❌
                     </button>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-gray-700">
-                    Duration (seconds)
-                  </label>
-                  <input
-                    type="number"
-                    value={segment.duration}
-                    onChange={(e) =>
-                      updateSegment(
-                        segment.id,
-                        "duration",
-                        Number(e.target.value)
-                      )
-                    }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    min="1"
-                    step="0.5"
-                  />
-                </div>
-
-                {/* Subtitle Text */}
-                <div className="md:col-span-2 space-y-2">
-                  <label className="text-xs font-medium text-gray-700">
-                    Subtitle Text
-                  </label>
-                  <div className="flex gap-2">
-                    <textarea
-                      value={segment.subtitle}
-                      onChange={(e) =>
-                        updateSegment(segment.id, "subtitle", e.target.value)
-                      }
-                      placeholder="Enter subtitle text..."
-                      className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm resize-none"
-                      rows={2}
-                      onFocus={() => setCurrentSegmentId(segment.id)}
-                    />
-                    <button
-                      onClick={() => removeSegment(segment.id)}
-                      className="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs self-start"
-                      title="Remove segment"
-                      disabled={segments.length === 1}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Time Preview */}
-              <div className="mt-2 text-xs text-gray-500">
-                {Math.floor(segment.time / 60)}:
-                {(segment.time % 60).toFixed(1).padStart(4, "0")} →{" "}
-                {Math.floor(segment.end / 60)}:
-                {(segment.end % 60).toFixed(1).padStart(4, "0")}
-              </div>
-            </div>
-          ))}
-        </div>
+                );
+              })}
+          </div>
+        )}
 
         {/* Lesson Title Input */}
         <div className="pt-4 border-t">
@@ -327,9 +331,8 @@ export default function ManualTranscription({
               </>
             ) : (
               <>
-                <Save className="w-5 h-5" />
-                Save Lesson & Start Practice (
-                {segments.filter((s) => s.subtitle.trim()).length} segments)
+                <Save className="w-5 h-5" />✅ Save Lesson & Start Practice (
+                {pausePoints.filter((p) => p.subtitle.trim()).length} pauses)
               </>
             )}
           </button>

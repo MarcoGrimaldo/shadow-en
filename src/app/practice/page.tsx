@@ -54,6 +54,7 @@ export default function PracticePage() {
   const [currentResult, setCurrentResult] = useState<PracticeResult | null>(
     null
   );
+  const [isStartingVideo, setIsStartingVideo] = useState(true);
 
   const videoRef = useRef<HTMLIFrameElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -163,6 +164,7 @@ export default function PracticePage() {
   };
 
   const handleNext = () => {
+    setIsStartingVideo(true);
     setShowResults(false);
     setCurrentResult(null);
     setCurrentRecognition("");
@@ -174,9 +176,12 @@ export default function PracticePage() {
       const nextIndex = currentPauseIndex + 1;
       setCurrentPauseIndex(nextIndex);
 
-      // Seek to just before the next pause point and resume playbook
+      // Play sequentially from previous pause time to current pause time
       const nextPause = practiceData.pauses[nextIndex];
-      const seekTime = Math.max(0, nextPause.time - 2); // Start 2 seconds before next pause
+      const previousPause = practiceData.pauses[currentPauseIndex];
+
+      // Start from the previous pause time (or 0 for the first segment)
+      const seekTime = previousPause ? previousPause.time : 0;
 
       console.log(
         `Moving to pause ${
@@ -189,9 +194,13 @@ export default function PracticePage() {
         setTimeout(() => {
           postMessageToVideo("playVideo");
           setIsVideoPlaying(true);
+          setIsStartingVideo(false);
 
           // Fallback timer - force pause at the correct time regardless of API
-          const playDuration = (nextPause.time - seekTime) * 1000; // Convert to milliseconds
+          const playDuration = Math.max(
+            1000,
+            (nextPause.time - seekTime) * 1000
+          ); // Convert to milliseconds, minimum 1 second
           console.log(
             `Setting fallback timer for ${playDuration}ms to force pause at ${nextPause.time}s`
           );
@@ -278,10 +287,12 @@ export default function PracticePage() {
 
     // Initialize video from the beginning
     setTimeout(() => {
+      setIsStartingVideo(true);
       postMessageToVideo("seekTo", [0, true]);
       setTimeout(() => {
         postMessageToVideo("playVideo");
         setIsVideoPlaying(true);
+        setIsStartingVideo(false);
         console.log("Video should be playing now");
 
         // Fallback timer as backup - pause at first pause point regardless of API
@@ -310,6 +321,7 @@ export default function PracticePage() {
     setVideoCurrentTime(0);
     setIsRecording(false);
     setCurrentRecognition("");
+    setIsStartingVideo(false);
 
     // Pause and seek to beginning
     postMessageToVideo("pauseVideo");
@@ -536,20 +548,6 @@ export default function PracticePage() {
                 </span>
               </div>
 
-              {/* Current subtitle display */}
-              {currentPause && (
-                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="text-center">
-                    <div className="text-sm text-blue-600 font-medium mb-2">
-                      Current Subtitle (at {formatTime(currentPause.time)}):
-                    </div>
-                    <div className="text-lg font-semibold text-blue-900">
-                      "{currentPause.subtitle}"
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Show Results */}
               {showResults && currentResult ? (
                 <div className="space-y-6">
@@ -609,7 +607,7 @@ export default function PracticePage() {
                     </button>
                   </div>
                 </div>
-              ) : !isVideoPlaying && !showResults ? (
+              ) : !isVideoPlaying && !showResults && !isStartingVideo ? (
                 <SpeechRecorder
                   isRecording={isRecording}
                   onStartRecording={startRecording}
@@ -622,13 +620,21 @@ export default function PracticePage() {
                 <div className="text-center py-8">
                   <div className="animate-pulse">
                     <Play className="w-12 h-12 text-blue-600 mx-auto mb-3" />
-                    <p className="text-lg text-gray-600">Video is playing...</p>
+                    <p className="text-lg text-gray-600">
+                      {isStartingVideo
+                        ? "Starting video..."
+                        : "Video is playing..."}
+                    </p>
                     <p className="text-sm text-gray-500">
-                      Listen carefully and get ready to repeat
+                      {isStartingVideo
+                        ? "Please wait"
+                        : "Listen carefully and get ready to repeat"}
                     </p>
-                    <p className="text-xs text-gray-400 mt-2">
-                      Will pause at {formatTime(currentPause?.time || 0)}
-                    </p>
+                    {!isStartingVideo && (
+                      <p className="text-xs text-gray-400 mt-2">
+                        Will pause at {formatTime(currentPause?.time || 0)}
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : null}
