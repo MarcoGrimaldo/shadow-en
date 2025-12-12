@@ -8,12 +8,48 @@ interface Pause {
   subtitle: string;
 }
 
-// GET - Retrieve all public lessons with user information
+// GET - Retrieve all public lessons with user information, or a single lesson by ID
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const userId = url.searchParams.get("user_id"); // Optional: filter by user
+    const lessonId = url.searchParams.get("id"); // Optional: get single lesson
 
+    // If lessonId is provided, return single lesson
+    if (lessonId) {
+      const { data: lesson, error } = await supabase
+        .from("lessons")
+        .select(
+          `
+          *,
+          users (
+            id,
+            username,
+            avatar_url
+          )
+        `
+        )
+        .eq("id", lessonId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching lesson:", error);
+        if (error.code === "PGRST116") {
+          return NextResponse.json(
+            { error: "Lesson not found" },
+            { status: 404 }
+          );
+        }
+        return NextResponse.json(
+          { error: "Failed to fetch lesson" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(lesson);
+    }
+
+    // Otherwise, return all public lessons
     let query = supabase
       .from("lessons")
       .select(
@@ -208,6 +244,159 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(lesson, { status: 201 });
   } catch (error: any) {
     console.error("Unexpected error creating lesson:", error);
+    return NextResponse.json(
+      { error: `Server error: ${error.message}` },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Update a lesson (only by owner)
+export async function PUT(request: NextRequest) {
+  try {
+    console.log("PUT /api/lessons - Starting request");
+
+    // Get the authorization header
+    const authHeader = request.headers.get("authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return NextResponse.json(
+        { error: "Authentication required - missing or invalid token" },
+        { status: 401 }
+      );
+    }
+
+    // Extract the JWT token
+    const token = authHeader.replace("Bearer ", "");
+
+    // Verify token with Supabase
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser(token);
+
+    if (authError) {
+      console.error("Auth verification error:", authError);
+      return NextResponse.json(
+        { error: `Authentication failed: ${authError.message}` },
+        { status: 401 }
+      );
+    }
+
+    if (!user) {
+      console.error("No user found for token");
+      return NextResponse.json(
+        { error: "Invalid token - no user found" },
+        { status: 401 }
+      );
+    }
+
+    console.log("Authenticated user:", user.id, user.email);
+
+    const body = await request.json();
+    const { id, title, video_id, video_url, pauses, is_public } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: "Missing lesson ID" }, { status: 400 });
+    }
+
+    if (!title || !video_id || !video_url || !pauses) {
+      return NextResponse.json(
+        {
+          error: "Missing required fields: title, video_id, video_url, pauses",
+        },
+        { status: 400 }
+      );
+    }
+
+    // First, check if the lesson exists and belongs to the user
+    const { data: existingLesson, error: fetchError } = await supabase
+      .from("lessons")
+      .select("user_id")
+      .eq("id", id)
+      .single();
+
+    if (fetchError) {
+      console.error("Error fetching lesson:", fetchError);
+      if (fetchError.code === "PGRST116") {
+        return NextResponse.json(
+          { error: "Lesson not found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Failed to fetch lesson" },
+        { status: 500 }
+      );
+    }
+
+    // Check ownership
+    if (existingLesson.user_id !== user.id) {
+      console.log(
+        "Unauthorized: User",
+        user.id,
+        "tried to edit lesson owned by",
+        existingLesson.user_id
+      );
+      return NextResponse.json(
+        { error: "You can only edit lessons you created" },
+        { status: 403 }
+      );
+    }
+
+    // Create a Supabase client with the user's auth token for RLS context
+    const userSupabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      }
+    );
+
+    // Update the lesson
+    const updateData: any = {
+      title,
+      video_id,
+      video_url,
+      pauses,
+    };
+
+    // Only update is_public if explicitly provided
+    if (typeof is_public === "boolean") {
+      updateData.is_public = is_public;
+    }
+
+    const { data: lesson, error: updateError } = await userSupabase
+      .from("lessons")
+      .update(updateData)
+      .eq("id", id)
+      .select(
+        `
+        *,
+        users (
+          id,
+          username,
+          avatar_url
+        )
+      `
+      )
+      .single();
+
+    if (updateError) {
+      console.error("Error updating lesson:", updateError);
+      return NextResponse.json(
+        { error: `Failed to update lesson: ${updateError.message}` },
+        { status: 500 }
+      );
+    }
+
+    console.log("Lesson updated successfully:", lesson.id);
+    return NextResponse.json(lesson);
+  } catch (error: any) {
+    console.error("Unexpected error updating lesson:", error);
     return NextResponse.json(
       { error: `Server error: ${error.message}` },
       { status: 500 }

@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import MobileWarningBanner from "@/components/MobileWarningBanner";
 
 export default function ConditionalLayout({
   children,
@@ -15,6 +16,7 @@ export default function ConditionalLayout({
 
   return (
     <>
+      <MobileWarningBanner />
       {showNavbar && <Navbar />}
       {children}
     </>

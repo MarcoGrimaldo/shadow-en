@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   Play,
   Trash2,
@@ -12,6 +14,7 @@ import {
   Home,
   BookOpen,
   Loader2,
+  Edit,
 } from "lucide-react";
 
 interface Pause {
@@ -26,12 +29,14 @@ interface Lesson {
   videoId: string;
   videoUrl: string;
   pauses: Pause[];
+  userId: string;
   createdAt: string;
   updatedAt: string;
 }
 
 export default function LessonsPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
@@ -47,7 +52,18 @@ export default function LessonsPage() {
       const response = await fetch("/api/lessons");
       if (response.ok) {
         const lessonsData = await response.json();
-        setLessons(lessonsData);
+        // Map snake_case from API to camelCase for frontend
+        const mappedLessons = lessonsData.map((lesson: any) => ({
+          id: lesson.id,
+          title: lesson.title,
+          videoId: lesson.video_id,
+          videoUrl: lesson.video_url,
+          pauses: lesson.pauses,
+          userId: lesson.user_id,
+          createdAt: lesson.created_at,
+          updatedAt: lesson.updated_at,
+        }));
+        setLessons(mappedLessons);
       } else {
         console.error("Failed to load lessons");
       }
@@ -69,14 +85,23 @@ export default function LessonsPage() {
 
     setDeletingLessonId(lessonId);
     try {
+      // Get fresh session for authorization
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       const response = await fetch(`/api/lessons?id=${lessonId}`, {
         method: "DELETE",
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
       });
 
       if (response.ok) {
         setLessons((prev) => prev.filter((lesson) => lesson.id !== lessonId));
       } else {
-        alert("Failed to delete lesson. Please try again.");
+        const data = await response.json();
+        alert(data.error || "Failed to delete lesson. Please try again.");
       }
     } catch (error) {
       console.error("Error deleting lesson:", error);
@@ -290,17 +315,31 @@ export default function LessonsPage() {
                         <Play className="w-4 h-4" />
                         Practice
                       </button>
-                      <button
-                        onClick={() => deleteLesson(lesson.id)}
-                        disabled={deletingLessonId === lesson.id}
-                        className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors disabled:opacity-50"
-                      >
-                        {deletingLessonId === lesson.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-4 h-4" />
-                        )}
-                      </button>
+                      {/* Edit button - only show for lesson owner */}
+                      {user && user.id === lesson.userId && (
+                        <button
+                          onClick={() => router.push(`/edit/${lesson.id}`)}
+                          className="px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
+                          title="Edit lesson"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                      )}
+                      {/* Delete button - only show for lesson owner */}
+                      {user && user.id === lesson.userId && (
+                        <button
+                          onClick={() => deleteLesson(lesson.id)}
+                          disabled={deletingLessonId === lesson.id}
+                          className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition-colors disabled:opacity-50"
+                          title="Delete lesson"
+                        >
+                          {deletingLessonId === lesson.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

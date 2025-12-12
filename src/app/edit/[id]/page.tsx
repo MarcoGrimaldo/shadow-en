@@ -1,10 +1,20 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { Play, Plus, X, Wand2, AlertCircle } from "lucide-react";
+import {
+  Play,
+  Plus,
+  X,
+  Wand2,
+  AlertCircle,
+  Save,
+  ArrowLeft,
+  Loader2,
+  Shield,
+} from "lucide-react";
 import AuthModal from "@/components/auth/AuthModal";
 import {
   formatTime,
@@ -22,9 +32,33 @@ interface Pause {
   subtitle: string;
 }
 
-export default function CreateLesson() {
+interface Lesson {
+  id: string;
+  title: string;
+  video_id: string;
+  video_url: string;
+  pauses: Pause[];
+  user_id: string;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+  users?: {
+    id: string;
+    username: string;
+  };
+}
+
+export default function EditLesson() {
   const router = useRouter();
+  const params = useParams();
+  const lessonId = params.id as string;
   const { user, accessToken } = useAuth();
+
+  const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [isLoadingLesson, setIsLoadingLesson] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
+
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [videoUrl, setVideoUrl] = useState("");
   const [pauses, setPauses] = useState<Pause[]>([]);
@@ -37,9 +71,90 @@ export default function CreateLesson() {
   } | null>(null);
   const [showManualTranscription, setShowManualTranscription] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState("");
+  const [lessonTitle, setLessonTitle] = useState("");
+
+  // Load lesson data
+  useEffect(() => {
+    const loadLesson = async () => {
+      if (!lessonId) return;
+
+      setIsLoadingLesson(true);
+      setLoadError("");
+
+      try {
+        // Get fresh session
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const response = await fetch(`/api/lessons?id=${lessonId}`, {
+          headers: session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {},
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            setLoadError("Lesson not found");
+          } else if (response.status === 403) {
+            setIsUnauthorized(true);
+            setLoadError("You don't have permission to edit this lesson");
+          } else {
+            setLoadError("Failed to load lesson");
+          }
+          return;
+        }
+
+        const lessonData = await response.json();
+
+        // Check if user is the owner
+        if (user && lessonData.user_id !== user.id) {
+          setIsUnauthorized(true);
+          setLoadError("You can only edit lessons you created");
+          return;
+        }
+
+        setLesson(lessonData);
+        setVideoUrl(lessonData.video_url);
+        setPauses(lessonData.pauses || []);
+        setCurrentVideoId(lessonData.video_id);
+        setLessonTitle(lessonData.title || "");
+        setVideoInfo({
+          segments: lessonData.pauses?.length || 0,
+        });
+      } catch (error) {
+        console.error("Error loading lesson:", error);
+        setLoadError("Failed to load lesson");
+      } finally {
+        setIsLoadingLesson(false);
+      }
+    };
+
+    loadLesson();
+  }, [lessonId, user]);
 
   const removePause = (id: number) => {
     setPauses(pauses.filter((p) => p.id !== id));
+  };
+
+  const updatePauseTime = (id: number, newTime: number) => {
+    setPauses(pauses.map((p) => (p.id === id ? { ...p, time: newTime } : p)));
+  };
+
+  const updatePauseSubtitle = (id: number, newSubtitle: string) => {
+    setPauses(
+      pauses.map((p) => (p.id === id ? { ...p, subtitle: newSubtitle } : p))
+    );
+  };
+
+  const addNewPause = () => {
+    const newId = Date.now();
+    const lastPauseTime =
+      pauses.length > 0 ? Math.max(...pauses.map((p) => p.time)) : 0;
+    setPauses([
+      ...pauses,
+      { id: newId, time: lastPauseTime + 5, subtitle: "" },
+    ]);
   };
 
   const generateSubtitles = async () => {
@@ -107,17 +222,14 @@ export default function CreateLesson() {
     }, 0);
   }, []);
 
-  const requireAuth = (action: () => void) => {
+  const updateLesson = async () => {
     if (!user) {
       setShowAuthModal(true);
       return;
     }
-    action();
-  };
 
-  const saveLesson = async () => {
-    if (!user) {
-      setShowAuthModal(true);
+    if (!lesson) {
+      alert("No lesson loaded");
       return;
     }
 
@@ -131,10 +243,14 @@ export default function CreateLesson() {
       return;
     }
 
+    if (!lessonTitle.trim()) {
+      alert("Please enter a lesson title");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      // Get fresh session token
       const {
         data: { session },
         error: sessionError,
@@ -149,14 +265,15 @@ export default function CreateLesson() {
 
       const videoId = getYouTubeVideoId(videoUrl);
       const lessonData = {
-        title: `YouTube Video: ${videoId}`,
+        id: lesson.id,
+        title: lessonTitle.trim(),
         video_id: videoId,
         video_url: videoUrl,
         pauses,
       };
 
       const response = await fetch("/api/lessons", {
-        method: "POST",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
@@ -167,15 +284,19 @@ export default function CreateLesson() {
       const responseData = await response.json();
 
       if (!response.ok) {
-        throw new Error(responseData.error || "Failed to save lesson");
+        if (response.status === 403) {
+          alert("You can only edit lessons you created");
+          return;
+        }
+        throw new Error(responseData.error || "Failed to update lesson");
       }
 
-      alert("Lesson saved successfully!");
-      router.push("/");
+      alert("Lesson updated successfully!");
+      router.push("/lessons");
     } catch (error) {
-      console.error("Error saving lesson:", error);
+      console.error("Error updating lesson:", error);
       alert(
-        `Failed to save lesson: ${
+        `Failed to update lesson: ${
           error instanceof Error ? error.message : "Please try again."
         }`
       );
@@ -183,6 +304,7 @@ export default function CreateLesson() {
       setIsLoading(false);
     }
   };
+
   const clearSubtitles = () => {
     setPauses([]);
     setSubtitleError("");
@@ -213,7 +335,19 @@ export default function CreateLesson() {
     router.push("/practice");
   };
 
-  // Redirect if not authenticated
+  // Loading state
+  if (isLoadingLesson) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading lesson...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Not authenticated
   if (!user) {
     return (
       <>
@@ -221,14 +355,12 @@ export default function CreateLesson() {
           <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
             <div className="mb-6">
               <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Plus className="w-8 h-8 text-blue-600" />
+                <Shield className="w-8 h-8 text-blue-600" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Create a Lesson
+                Authentication Required
               </h2>
-              <p className="text-gray-600">
-                Sign in to start creating your own English practice lessons
-              </p>
+              <p className="text-gray-600">Sign in to edit lessons</p>
             </div>
             <button
               onClick={() => setShowAuthModal(true)}
@@ -241,9 +373,35 @@ export default function CreateLesson() {
         <AuthModal
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
-          initialMode="signup"
+          initialMode="login"
         />
       </>
+    );
+  }
+
+  // Unauthorized or error
+  if (loadError || isUnauthorized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+          <div className="mb-6">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              {isUnauthorized ? "Access Denied" : "Error"}
+            </h2>
+            <p className="text-gray-600">{loadError}</p>
+          </div>
+          <button
+            onClick={() => router.push("/lessons")}
+            className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Lessons
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -251,20 +409,40 @@ export default function CreateLesson() {
     <>
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
         <div className="max-w-4xl mx-auto">
-          <header className="text-center mb-8 pt-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">
-              Create New Lesson
-            </h1>
-            <p className="text-lg text-gray-600">
-              Create English pronunciation practice sessions with the shadow
-              technique
-            </p>
+          {/* Header */}
+          <header className="flex items-center gap-4 mb-8 pt-8">
+            <button
+              onClick={() => router.push("/lessons")}
+              className="p-2 hover:bg-white/50 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-6 h-6 text-gray-600" />
+            </button>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Edit Lesson</h1>
+              <p className="text-gray-600">
+                Update your pronunciation practice session
+              </p>
+            </div>
           </header>
 
           <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
             <h2 className="text-2xl font-semibold mb-6">
-              Setup Your Practice Session
+              Edit Practice Session
             </h2>
+
+            {/* Lesson Title Input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Lesson Title *
+              </label>
+              <input
+                type="text"
+                value={lessonTitle}
+                onChange={(e) => setLessonTitle(e.target.value)}
+                placeholder="Enter a descriptive title for your lesson"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
 
             {/* Video URL Input */}
             <div className="mb-6">
@@ -294,7 +472,7 @@ export default function CreateLesson() {
                   ) : (
                     <>
                       <Wand2 className="w-4 h-4" />
-                      Get Captions
+                      Re-fetch Captions
                     </>
                   )}
                 </button>
@@ -306,8 +484,7 @@ export default function CreateLesson() {
                 </p>
                 {videoInfo && (
                   <p className="text-sm text-green-600 font-medium">
-                    ✓ Found {videoInfo.segments} segments ({videoInfo.duration}
-                    s)
+                    ✓ {videoInfo.segments} segments
                   </p>
                 )}
               </div>
@@ -345,51 +522,89 @@ export default function CreateLesson() {
                 <h2 className="text-2xl font-semibold">
                   Practice Segments ({pauses.length})
                 </h2>
-                <button
-                  onClick={clearSubtitles}
-                  className="text-gray-500 hover:text-red-600 transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={addNewPause}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Segment
+                  </button>
+                  <button
+                    onClick={clearSubtitles}
+                    className="text-gray-500 hover:text-red-600 transition-colors"
+                    title="Clear all segments"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              <div className="grid gap-3 mb-6 max-h-60 overflow-y-auto">
-                {pauses.map((pause) => (
-                  <div
-                    key={pause.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium">
-                        {formatTime(pause.time)}
-                      </span>
-                      <span className="text-gray-700">{pause.subtitle}</span>
-                    </div>
-                    <button
-                      onClick={() => removePause(pause.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors"
+              <p className="text-sm text-gray-500 mb-4">
+                Click on the time or text to edit. Time format: M:SS (e.g., 0:15
+                for 15 seconds)
+              </p>
+
+              <div className="grid gap-3 mb-6 max-h-80 overflow-y-auto">
+                {pauses
+                  .sort((a, b) => a.time - b.time)
+                  .map((pause) => (
+                    <div
+                      key={pause.id}
+                      className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg group"
                     >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+                      {/* Editable Time Input */}
+                      <input
+                        type="text"
+                        value={formatTime(pause.time)}
+                        onChange={(e) => {
+                          const timeStr = e.target.value;
+                          const parsed = parseTimeInput(timeStr);
+                          if (!isNaN(parsed)) {
+                            updatePauseTime(pause.id, parsed);
+                          }
+                        }}
+                        className="w-16 bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm font-medium text-center focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        placeholder="0:00"
+                      />
+
+                      {/* Editable Subtitle Input */}
+                      <input
+                        type="text"
+                        value={pause.subtitle}
+                        onChange={(e) =>
+                          updatePauseSubtitle(pause.id, e.target.value)
+                        }
+                        className="flex-1 bg-transparent text-gray-700 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none rounded px-2 py-1"
+                        placeholder="Enter subtitle text..."
+                      />
+
+                      {/* Delete Button */}
+                      <button
+                        onClick={() => removePause(pause.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
               </div>
 
               <div className="flex gap-4">
                 <button
-                  onClick={() => requireAuth(saveLesson)}
+                  onClick={updateLesson}
                   disabled={isLoading}
                   className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium transition-colors"
                 >
                   {isLoading ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      <Loader2 className="w-4 h-4 animate-spin" />
                       Saving...
                     </>
                   ) : (
                     <>
-                      <Plus className="w-4 h-4" />
-                      Save Lesson
+                      <Save className="w-4 h-4" />
+                      Save Changes
                     </>
                   )}
                 </button>
@@ -399,61 +614,24 @@ export default function CreateLesson() {
                   className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
                 >
                   <Play className="w-4 h-4" />
-                  Start Practice
+                  Test Practice
+                </button>
+
+                <button
+                  onClick={() => router.push("/lessons")}
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
             </div>
           )}
-
-          {/* Instructions */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-xl font-semibold mb-4">How it works</h3>
-            <div className="space-y-3 text-gray-600">
-              <div className="flex gap-3">
-                <span className="bg-purple-100 text-purple-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                  1
-                </span>
-                <p>
-                  Paste any YouTube URL (videos, Shorts, max 1 minute) and click{" "}
-                  <strong className="text-purple-700">"Get Captions"</strong> to
-                  extract subtitles automatically
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <span className="bg-blue-100 text-blue-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                  2
-                </span>
-                <p>
-                  If captions aren't available, manually add pause points with
-                  timing and subtitles
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <span className="bg-green-100 text-green-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                  3
-                </span>
-                <p>
-                  Practice by listening and repeating when the video pauses at
-                  each segment
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <span className="bg-orange-100 text-orange-800 rounded-full w-6 h-6 flex items-center justify-center text-sm font-semibold">
-                  4
-                </span>
-                <p>
-                  Get real-time pronunciation accuracy feedback and track your
-                  progress
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         <AuthModal
           isOpen={showAuthModal}
           onClose={() => setShowAuthModal(false)}
-          initialMode="signup"
+          initialMode="login"
         />
       </div>
     </>
