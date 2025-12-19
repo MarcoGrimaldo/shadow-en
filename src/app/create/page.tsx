@@ -189,7 +189,7 @@ export default function CreateLesson() {
     setVideoInfo(null);
   };
 
-  const startPractice = () => {
+  const startPractice = async () => {
     if (!isValidYouTubeUrl(videoUrl)) {
       alert("Please enter a valid YouTube URL");
       return;
@@ -201,12 +201,53 @@ export default function CreateLesson() {
       return;
     }
 
+    // If user is logged in, save the lesson first to get the lessonId
+    let lessonId: string | undefined;
+    if (user) {
+      setIsLoading(true);
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+
+        if (!sessionError && session?.access_token) {
+          const lessonData = {
+            title: `YouTube Video: ${videoId}`,
+            video_id: videoId,
+            video_url: videoUrl,
+            pauses,
+          };
+
+          const response = await fetch("/api/lessons", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify(lessonData),
+          });
+
+          if (response.ok) {
+            const savedLesson = await response.json();
+            lessonId = savedLesson.id;
+          }
+        }
+      } catch (error) {
+        console.error("Error saving lesson before practice:", error);
+        // Continue to practice even if save fails
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
     sessionStorage.setItem(
       "shadowPractice",
       JSON.stringify({
         videoId,
         pauses,
         videoUrl,
+        lessonId,
       })
     );
 

@@ -117,3 +117,50 @@ COMMENT ON TABLE public.users IS 'User profiles extending Supabase auth.users';
 COMMENT ON TABLE public.lessons IS 'Shadow technique English lessons created by users';
 COMMENT ON COLUMN public.lessons.pauses IS 'Array of pause points with time and subtitle data';
 COMMENT ON COLUMN public.lessons.is_public IS 'Whether lesson is visible to all users or private';
+
+-- =============================================
+-- RATINGS SYSTEM
+-- =============================================
+
+-- Create lesson_ratings table
+CREATE TABLE public.lesson_ratings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    lesson_id UUID REFERENCES public.lessons(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    UNIQUE(lesson_id, user_id) -- One rating per user per lesson
+);
+
+-- Create trigger for updated_at on ratings
+CREATE TRIGGER handle_lesson_ratings_updated_at
+    BEFORE UPDATE ON public.lesson_ratings
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_updated_at();
+
+-- Row Level Security for ratings
+ALTER TABLE public.lesson_ratings ENABLE ROW LEVEL SECURITY;
+
+-- Allow everyone to read ratings
+CREATE POLICY "Ratings are viewable by everyone" ON public.lesson_ratings
+    FOR SELECT USING (true);
+
+-- Allow authenticated users to insert their own ratings
+CREATE POLICY "Users can insert their own ratings" ON public.lesson_ratings
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+-- Allow users to update their own ratings
+CREATE POLICY "Users can update their own ratings" ON public.lesson_ratings
+    FOR UPDATE USING (auth.uid() = user_id);
+
+-- Allow users to delete their own ratings
+CREATE POLICY "Users can delete their own ratings" ON public.lesson_ratings
+    FOR DELETE USING (auth.uid() = user_id);
+
+-- Create indexes for ratings
+CREATE INDEX IF NOT EXISTS idx_lesson_ratings_lesson_id ON public.lesson_ratings(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_ratings_user_id ON public.lesson_ratings(user_id);
+
+COMMENT ON TABLE public.lesson_ratings IS 'User ratings for lessons (1-5 stars)';
+COMMENT ON COLUMN public.lesson_ratings.rating IS 'Rating value from 1 to 5 stars';

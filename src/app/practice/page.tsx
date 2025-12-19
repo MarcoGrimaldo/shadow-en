@@ -14,7 +14,9 @@ import {
   Send,
   Keyboard,
   Chrome,
+  Edit,
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   calculateTextAccuracy,
   formatTime,
@@ -23,6 +25,7 @@ import {
   isSpeechRecognitionSupported,
 } from "@/utils/helpers";
 import SpeechRecorder from "@/components/SpeechRecorder";
+import StarRating from "@/components/StarRating";
 
 interface Pause {
   id: number;
@@ -34,6 +37,7 @@ interface PracticeData {
   videoId: string;
   pauses: Pause[];
   videoUrl: string;
+  lessonId?: string;
 }
 
 interface PracticeResult {
@@ -45,7 +49,12 @@ interface PracticeResult {
 
 export default function PracticePage() {
   const router = useRouter();
+  const { user, accessToken } = useAuth();
   const [practiceData, setPracticeData] = useState<PracticeData | null>(null);
+  const [lessonOwnerId, setLessonOwnerId] = useState<string | null>(null);
+  const [userRating, setUserRating] = useState<number>(0);
+  const [hasRated, setHasRated] = useState(false);
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
   const [currentPauseIndex, setCurrentPauseIndex] = useState(0);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -63,6 +72,7 @@ export default function PracticePage() {
     useState(true);
   const [manualInputMode, setManualInputMode] = useState(false);
   const [manualInputText, setManualInputText] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLIFrameElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -126,6 +136,12 @@ export default function PracticePage() {
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
         setIsRecording(false);
+        // Show toast and switch to manual input on any error
+        setToastMessage("Voice recognition not available. Switching to text input.");
+        setManualInputMode(true);
+        setSpeechRecognitionSupported(false);
+        // Auto-hide toast after 4 seconds
+        setTimeout(() => setToastMessage(null), 4000);
       };
 
       recognitionRef.current.onend = () => {
@@ -139,7 +155,33 @@ export default function PracticePage() {
   useEffect(() => {
     const data = sessionStorage.getItem("shadowPractice");
     if (data) {
-      setPracticeData(JSON.parse(data));
+      const parsed = JSON.parse(data);
+      setPracticeData(parsed);
+
+      // Fetch lesson owner if lessonId exists
+      if (parsed.lessonId) {
+        fetch(`/api/lessons?id=${parsed.lessonId}`)
+          .then((res) => res.json())
+          .then((lesson) => {
+            if (lesson && lesson.user_id) {
+              setLessonOwnerId(lesson.user_id);
+            }
+          })
+          .catch((err) => console.error("Error fetching lesson:", err));
+
+        // Fetch user's existing rating if logged in
+        if (user) {
+          fetch(`/api/ratings?lesson_id=${parsed.lessonId}&user_id=${user.id}`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.userRating) {
+                setUserRating(data.userRating);
+                setHasRated(true);
+              }
+            })
+            .catch((err) => console.error("Error fetching rating:", err));
+        }
+      }
     } else {
       router.push("/");
     }
@@ -349,6 +391,36 @@ export default function PracticePage() {
     router.push("/");
   };
 
+  const handleRating = async (rating: number) => {
+    if (!user || !accessToken || !practiceData?.lessonId) {
+      return;
+    }
+
+    setIsSubmittingRating(true);
+    try {
+      const response = await fetch("/api/ratings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          lesson_id: practiceData.lessonId,
+          rating,
+        }),
+      });
+
+      if (response.ok) {
+        setUserRating(rating);
+        setHasRated(true);
+      }
+    } catch (error) {
+      console.error("Error submitting rating:", error);
+    } finally {
+      setIsSubmittingRating(false);
+    }
+  };
+
   // Initialize YouTube Player API
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -499,6 +571,22 @@ export default function PracticePage() {
             </button>
           </div>
         </header>
+
+        {/* Toast Notification */}
+        {toastMessage && (
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
+            <div className="bg-amber-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+              <span className="font-medium">{toastMessage}</span>
+              <button
+                onClick={() => setToastMessage(null)}
+                className="ml-2 text-white/80 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Progress Indicator - Always visible on top */}
         {sessionStarted && (
@@ -734,17 +822,12 @@ export default function PracticePage() {
                       {/* Voice or Manual Input */}
                       {manualInputMode ? (
                         <div className="space-y-3">
-                          {/* Expected Text Display */}
-                          <div className="text-center">
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <Volume2 className="w-5 h-5 text-blue-600" />
-                              <span className="text-sm font-medium text-gray-600">
-                                Type what you heard:
-                              </span>
-                            </div>
-                            <div className="text-lg font-medium text-gray-800 bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg">
-                              "{currentPause?.subtitle || ""}"
-                            </div>
+                          {/* Prompt */}
+                          <div className="flex items-center justify-center gap-2">
+                            <Volume2 className="w-5 h-5 text-blue-600" />
+                            <span className="text-sm font-medium text-gray-600">
+                              Type what you heard:
+                            </span>
                           </div>
 
                           {/* Text Input */}
@@ -824,6 +907,31 @@ export default function PracticePage() {
                   </p>
                 </div>
 
+                {/* Rate This Lesson */}
+                {practiceData?.lessonId && user && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 flex-shrink-0">
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        {hasRated ? "Thanks for rating!" : "Rate this lesson:"}
+                      </p>
+                      <div className="flex justify-center">
+                        <StarRating
+                          rating={userRating}
+                          onRate={handleRating}
+                          readonly={isSubmittingRating}
+                          size="lg"
+                        />
+                      </div>
+                      {hasRated && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          You rated this {userRating} star
+                          {userRating !== 1 ? "s" : ""}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Results Summary - Scrollable */}
                 <div className="flex-1 overflow-auto mb-4">
                   <h3 className="text-sm font-semibold mb-2 sticky top-0 bg-white">
@@ -860,7 +968,7 @@ export default function PracticePage() {
                   </div>
                 </div>
 
-                <div className="flex gap-3 justify-center flex-shrink-0">
+                <div className="flex gap-3 justify-center flex-shrink-0 flex-wrap">
                   <button
                     onClick={restartPractice}
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
@@ -875,6 +983,19 @@ export default function PracticePage() {
                     <Home className="w-4 h-4" />
                     New Session
                   </button>
+                  {practiceData?.lessonId &&
+                    user &&
+                    lessonOwnerId === user.id && (
+                      <button
+                        onClick={() =>
+                          router.push(`/edit/${practiceData.lessonId}`)
+                        }
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm"
+                      >
+                        <Edit className="w-4 h-4" />
+                        Edit Practice
+                      </button>
+                    )}
                 </div>
               </div>
             )}
@@ -1035,17 +1156,12 @@ export default function PracticePage() {
                   {/* Voice or Manual Input */}
                   {manualInputMode ? (
                     <div className="space-y-3">
-                      {/* Expected Text Display */}
-                      <div className="text-center">
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <Volume2 className="w-5 h-5 text-blue-600" />
-                          <span className="text-sm font-medium text-gray-600">
-                            Type what you heard:
-                          </span>
-                        </div>
-                        <div className="text-base font-medium text-gray-800 bg-blue-50 border-l-4 border-blue-400 p-3 rounded-lg">
-                          "{currentPause?.subtitle || ""}"
-                        </div>
+                      {/* Prompt */}
+                      <div className="flex items-center justify-center gap-2">
+                        <Volume2 className="w-5 h-5 text-blue-600" />
+                        <span className="text-sm font-medium text-gray-600">
+                          Type what you heard:
+                        </span>
                       </div>
 
                       {/* Text Input */}
@@ -1106,6 +1222,23 @@ export default function PracticePage() {
                   {averageAccuracy}%
                 </span>
               </p>
+
+              {/* Rate This Lesson - Mobile */}
+              {practiceData?.lessonId && user && (
+                <div className="mt-3 pt-3 border-t">
+                  <p className="text-sm font-medium text-gray-700 mb-2">
+                    {hasRated ? "Thanks for rating!" : "Rate this lesson:"}
+                  </p>
+                  <div className="flex justify-center">
+                    <StarRating
+                      rating={userRating}
+                      onRate={handleRating}
+                      readonly={isSubmittingRating}
+                      size="lg"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Results Summary - Scrollable */}
@@ -1142,21 +1275,32 @@ export default function PracticePage() {
               </div>
             </div>
 
-            <div className="p-4 border-t flex gap-3 flex-shrink-0">
-              <button
-                onClick={restartPractice}
-                className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium"
-              >
-                <RotateCcw className="w-5 h-5" />
-                Practice Again
-              </button>
-              <button
-                onClick={goHome}
-                className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-medium"
-              >
-                <Home className="w-5 h-5" />
-                New Session
-              </button>
+            <div className="p-4 border-t flex flex-col gap-3 flex-shrink-0">
+              <div className="flex gap-3">
+                <button
+                  onClick={restartPractice}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium"
+                >
+                  <RotateCcw className="w-5 h-5" />
+                  Practice Again
+                </button>
+                <button
+                  onClick={goHome}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-gray-600 hover:bg-gray-700 text-white rounded-xl font-medium"
+                >
+                  <Home className="w-5 h-5" />
+                  New Session
+                </button>
+              </div>
+              {practiceData?.lessonId && user && lessonOwnerId === user.id && (
+                <button
+                  onClick={() => router.push(`/edit/${practiceData.lessonId}`)}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium"
+                >
+                  <Edit className="w-5 h-5" />
+                  Edit Practice
+                </button>
+              )}
             </div>
           </div>
         </div>

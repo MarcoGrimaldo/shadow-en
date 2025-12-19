@@ -16,6 +16,7 @@ import {
   Loader2,
   Edit,
 } from "lucide-react";
+import StarRating from "@/components/StarRating";
 
 interface Pause {
   id: number;
@@ -32,14 +33,18 @@ interface Lesson {
   userId: string;
   createdAt: string;
   updatedAt: string;
+  averageRating?: number;
+  totalRatings?: number;
+  userRating?: number;
 }
 
 export default function LessonsPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingLessonId, setDeletingLessonId] = useState<string | null>(null);
+  const [ratingLessonId, setRatingLessonId] = useState<string | null>(null);
 
   // Load lessons on component mount
   useEffect(() => {
@@ -62,8 +67,14 @@ export default function LessonsPage() {
           userId: lesson.user_id,
           createdAt: lesson.created_at,
           updatedAt: lesson.updated_at,
+          averageRating: 0,
+          totalRatings: 0,
+          userRating: undefined,
         }));
         setLessons(mappedLessons);
+
+        // Fetch ratings for all lessons
+        fetchAllRatings(mappedLessons);
       } else {
         console.error("Failed to load lessons");
       }
@@ -71,6 +82,89 @@ export default function LessonsPage() {
       console.error("Error loading lessons:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchAllRatings = async (lessonsList: Lesson[]) => {
+    try {
+      const ratingsPromises = lessonsList.map(async (lesson) => {
+        const url = user
+          ? `/api/ratings?lesson_id=${lesson.id}&user_id=${user.id}`
+          : `/api/ratings?lesson_id=${lesson.id}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          return await response.json();
+        }
+        return null;
+      });
+
+      const ratingsResults = await Promise.all(ratingsPromises);
+
+      setLessons((prev) =>
+        prev.map((lesson, index) => {
+          const ratingData = ratingsResults[index];
+          if (ratingData) {
+            return {
+              ...lesson,
+              averageRating: ratingData.averageRating || 0,
+              totalRatings: ratingData.totalRatings || 0,
+              userRating: ratingData.userRating || undefined,
+            };
+          }
+          return lesson;
+        })
+      );
+    } catch (error) {
+      console.error("Error fetching ratings:", error);
+    }
+  };
+
+  const handleRateLesson = async (lessonId: string, rating: number) => {
+    if (!user || !accessToken) {
+      alert("Please sign in to rate lessons");
+      return;
+    }
+
+    setRatingLessonId(lessonId);
+    try {
+      const response = await fetch("/api/ratings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ lesson_id: lessonId, rating }),
+      });
+
+      if (response.ok) {
+        // Refresh rating for this lesson
+        const ratingResponse = await fetch(
+          `/api/ratings?lesson_id=${lessonId}&user_id=${user.id}`
+        );
+        if (ratingResponse.ok) {
+          const ratingData = await ratingResponse.json();
+          setLessons((prev) =>
+            prev.map((lesson) =>
+              lesson.id === lessonId
+                ? {
+                    ...lesson,
+                    averageRating: ratingData.averageRating || 0,
+                    totalRatings: ratingData.totalRatings || 0,
+                    userRating: ratingData.userRating,
+                  }
+                : lesson
+            )
+          );
+        }
+      } else {
+        const error = await response.json();
+        alert(error.error || "Failed to submit rating");
+      }
+    } catch (error) {
+      console.error("Error rating lesson:", error);
+      alert("Failed to submit rating");
+    } finally {
+      setRatingLessonId(null);
     }
   };
 
@@ -119,6 +213,7 @@ export default function LessonsPage() {
         videoId: lesson.videoId,
         pauses: lesson.pauses,
         videoUrl: lesson.videoUrl,
+        lessonId: lesson.id,
       })
     );
 
@@ -266,6 +361,25 @@ export default function LessonsPage() {
                     <h3 className="text-xl font-semibold text-gray-800 mb-2 line-clamp-2">
                       {lesson.title}
                     </h3>
+
+                    {/* Rating Section */}
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2">
+                        <StarRating
+                          rating={lesson.averageRating || 0}
+                          readonly={true}
+                          size="sm"
+                        />
+                        <span className="text-sm text-gray-500">
+                          {lesson.averageRating
+                            ? lesson.averageRating.toFixed(1)
+                            : "0"}
+                          {lesson.totalRatings
+                            ? ` (${lesson.totalRatings})`
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
 
                     {/* Lesson Info */}
                     <div className="space-y-2 text-sm text-gray-600 mb-4">

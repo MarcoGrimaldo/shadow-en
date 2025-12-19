@@ -121,6 +121,7 @@ export default function DashboardPage() {
         videoId: lesson.video_id,
         pauses: lesson.pauses,
         videoUrl: lesson.video_url,
+        lessonId: lesson.id,
       })
     );
     router.push("/practice");

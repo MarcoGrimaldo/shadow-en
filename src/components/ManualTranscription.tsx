@@ -194,6 +194,7 @@ export default function ManualTranscription({
           videoId,
           pauses,
           videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          lessonId: savedLesson.id,
         })
       );
 

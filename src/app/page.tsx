@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { Play, Calendar, User, Clock } from "lucide-react";
+import { Play, Calendar, User, Clock, Star } from "lucide-react";
 import { formatTime } from "@/utils/helpers";
+import StarRating from "@/components/StarRating";
 
 interface Lesson {
   id: string;
@@ -20,14 +21,18 @@ interface Lesson {
   users?: {
     username: string;
   };
+  averageRating?: number;
+  totalRatings?: number;
+  userRating?: number;
 }
 
 export default function Home() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, accessToken } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [ratingLessonId, setRatingLessonId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLessons();
@@ -43,12 +48,99 @@ export default function Home() {
       }
 
       const data = await response.json();
-      setLessons(Array.isArray(data) ? data : data.lessons || []);
+      const lessonsArray = Array.isArray(data) ? data : data.lessons || [];
+      setLessons(lessonsArray);
+      
+      // Fetch ratings for all lessons
+      fetchAllRatings(lessonsArray);
     } catch (error) {
       console.error("Error fetching lessons:", error);
       setError("Failed to load lessons");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllRatings = async (lessonsList: Lesson[]) => {
+    try {
+      const ratingsPromises = lessonsList.map(async (lesson) => {
+        const url = user
+          ? `/api/ratings?lesson_id=${lesson.id}&user_id=${user.id}`
+          : `/api/ratings?lesson_id=${lesson.id}`;
+        const response = await fetch(url);
+        if (response.ok) {
+          return await response.json();
+        }
+        return null;
+      });
+
+      const ratingsResults = await Promise.all(ratingsPromises);
+
+      setLessons((prev) =>
+        prev.map((lesson, index) => {
+          const ratingData = ratingsResults[index];
+          if (ratingData) {
+            return {
+              ...lesson,
+              averageRating: ratingData.averageRating || 0,
+              totalRatings: ratingData.totalRatings || 0,
+              userRating: ratingData.userRating || undefined,
+            };
+          }
+          return lesson;
+        })
+      );
+    } catch (error) {
+      console.error("Error fetching ratings:", error);
+    }
+  };
+
+  const handleRateLesson = async (lessonId: string, rating: number) => {
+    if (!user || !accessToken) {
+      alert("Please sign in to rate lessons");
+      return;
+    }
+
+    setRatingLessonId(lessonId);
+    try {
+      const response = await fetch("/api/ratings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ lesson_id: lessonId, rating }),
+      });
+
+      if (response.ok) {
+        // Refresh rating for this lesson
+        const ratingResponse = await fetch(
+          `/api/ratings?lesson_id=${lessonId}&user_id=${user.id}`
+        );
+        if (ratingResponse.ok) {
+          const ratingData = await ratingResponse.json();
+          setLessons((prev) =>
+            prev.map((lesson) =>
+              lesson.id === lessonId
+                ? {
+                    ...lesson,
+                    averageRating: ratingData.averageRating || 0,
+                    totalRatings: ratingData.totalRatings || 0,
+                    userRating: ratingData.userRating,
+                  }
+                : lesson
+            )
+          );
+        }
+      } else {
+        const errorData = await response.json();
+        alert(errorData.error || "Failed to submit rating");
+      }
+    } catch (error) {
+      console.error("Error rating lesson:", error);
+      alert("Failed to submit rating");
+    } finally {
+      setRatingLessonId(null);
     }
   };
 
@@ -60,6 +152,7 @@ export default function Home() {
         videoId: lesson.video_id,
         pauses: lesson.pauses,
         videoUrl: lesson.video_url,
+        lessonId: lesson.id,
       })
     );
 
@@ -183,6 +276,19 @@ export default function Home() {
                     <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
                       {lesson.title}
                     </h3>
+
+                    {/* Rating Section */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <StarRating
+                        rating={lesson.averageRating || 0}
+                        readonly={true}
+                        size="sm"
+                      />
+                      <span className="text-sm text-gray-500">
+                        {lesson.averageRating ? lesson.averageRating.toFixed(1) : "0"}
+                        {lesson.totalRatings ? ` (${lesson.totalRatings})` : ""}
+                      </span>
+                    </div>
 
                     {/* Creator Info */}
                     <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
