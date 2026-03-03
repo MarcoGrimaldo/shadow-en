@@ -554,7 +554,9 @@ export default function PracticePage() {
       <div className="max-w-7xl mx-auto w-full flex flex-col h-full">
         {/* Header - Compact */}
         <header className="flex justify-between items-center mb-3 flex-shrink-0">
-          <h1 className="text-xl font-bold text-gray-800">Shadow Practice</h1>
+          <h1 className="text-xl font-bold text-gray-800">
+            mimick.io Practice
+          </h1>
           <div className="flex gap-2">
             <button
               onClick={() => router.push("/lessons")}
@@ -686,7 +688,7 @@ export default function PracticePage() {
                   className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium flex items-center gap-2 mx-auto"
                 >
                   <Play className="w-5 h-5" />
-                  Start Shadow Practice
+                  Start Practice
                 </button>
               </div>
             )}
@@ -1009,7 +1011,7 @@ export default function PracticePage() {
                     Ready to Practice?
                   </h3>
                   <p className="text-gray-500 text-sm mb-4">
-                    Click "Start Shadow Practice" to begin
+                    Click "Start Practice" to begin
                   </p>
                   <p className="text-xs text-gray-400">
                     {practiceData.pauses.length} pause points • Listen and

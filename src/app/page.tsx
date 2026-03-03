@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
-import { Play, Calendar, User, Clock, Star } from "lucide-react";
+import { Play, Calendar, User, Clock, Star, Filter } from "lucide-react";
 import { formatTime } from "@/utils/helpers";
 import StarRating from "@/components/StarRating";
 
@@ -33,6 +33,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [ratingLessonId, setRatingLessonId] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<
+    "all" | "popular" | "newest" | "oldest"
+  >("all");
 
   useEffect(() => {
     fetchLessons();
@@ -164,6 +167,41 @@ export default function Home() {
     return Math.max(...pauses.map((p) => p.time)) + 5; // Add 5 seconds buffer
   };
 
+  const getFilteredLessons = () => {
+    let filtered = [...lessons];
+
+    switch (activeFilter) {
+      case "popular":
+        // Sort by rating (highest first), then by number of ratings
+        filtered.sort((a, b) => {
+          const ratingDiff = (b.averageRating || 0) - (a.averageRating || 0);
+          if (ratingDiff !== 0) return ratingDiff;
+          return (b.totalRatings || 0) - (a.totalRatings || 0);
+        });
+        break;
+      case "newest":
+        filtered.sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        break;
+      case "oldest":
+        filtered.sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        break;
+      case "all":
+      default:
+        // Keep original order
+        break;
+    }
+
+    return filtered;
+  };
+
+  const filteredLessons = getFilteredLessons();
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -181,7 +219,7 @@ export default function Home() {
         {/* Hero Section */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
-            Welcome to Shadow English
+            Welcome to mimick.io
           </h1>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             Improve your English pronunciation with the shadow technique.
@@ -189,40 +227,69 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
-            <div className="text-3xl font-bold text-blue-600">
-              {lessons.length}
-            </div>
-            <div className="text-gray-600">Total Lessons</div>
+        {/* Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-2 mb-8">
+          <div className="flex items-center gap-2 text-gray-600 mr-2">
+            <Filter className="w-4 h-4" />
+            <span className="text-sm font-medium">Filter:</span>
           </div>
-          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
-            <div className="text-3xl font-bold text-green-600">
-              {lessons.reduce(
-                (acc, lesson) => acc + (lesson.pauses?.length || 0),
-                0
-              )}
-            </div>
-            <div className="text-gray-600">Practice Segments</div>
-          </div>
-          <div className="bg-white rounded-lg p-6 text-center shadow-sm">
-            <div className="text-3xl font-bold text-purple-600">
-              {Math.round(
-                lessons.reduce(
-                  (acc, lesson) => acc + getTotalDuration(lesson.pauses || []),
-                  0
-                ) / 60
-              )}
-            </div>
-            <div className="text-gray-600">Minutes of Content</div>
-          </div>
+          <button
+            onClick={() => setActiveFilter("all")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              activeFilter === "all"
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setActiveFilter("popular")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              activeFilter === "popular"
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            ⭐ Most Popular
+          </button>
+          <button
+            onClick={() => setActiveFilter("newest")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              activeFilter === "newest"
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            🆕 Newest
+          </button>
+          <button
+            onClick={() => setActiveFilter("oldest")}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+              activeFilter === "oldest"
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            }`}
+          >
+            📅 Oldest
+          </button>
         </div>
 
         {/* Lessons Grid */}
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">All Lessons</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {activeFilter === "all"
+                ? "All Lessons"
+                : activeFilter === "popular"
+                ? "Most Popular"
+                : activeFilter === "newest"
+                ? "Newest Lessons"
+                : "Oldest Lessons"}
+              <span className="text-base font-normal text-gray-500 ml-2">
+                ({filteredLessons.length})
+              </span>
+            </h2>
             {!user && (
               <p className="text-sm text-gray-600">
                 Sign in to create your own lessons
@@ -236,7 +303,7 @@ export default function Home() {
             </div>
           )}
 
-          {lessons.length === 0 && !loading && !error ? (
+          {filteredLessons.length === 0 && !loading && !error ? (
             <div className="bg-white rounded-lg p-12 text-center shadow-sm">
               <div className="text-gray-400 mb-4">
                 <Play className="w-16 h-16 mx-auto" />
@@ -258,7 +325,7 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {lessons.map((lesson) => (
+              {filteredLessons.map((lesson) => (
                 <div
                   key={lesson.id}
                   className="bg-white rounded-lg shadow-sm hover:shadow-md transition-shadow border border-gray-200"
@@ -285,7 +352,9 @@ export default function Home() {
                         size="sm"
                       />
                       <span className="text-sm text-gray-500">
-                        {lesson.averageRating ? lesson.averageRating.toFixed(1) : "0"}
+                        {lesson.averageRating
+                          ? lesson.averageRating.toFixed(1)
+                          : "0"}
                         {lesson.totalRatings ? ` (${lesson.totalRatings})` : ""}
                       </span>
                     </div>

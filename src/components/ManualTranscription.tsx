@@ -210,6 +210,35 @@ export default function ManualTranscription({
 
   return (
     <div className="space-y-6">
+      {/* Instructions */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium mb-2">How to create pause points:</p>
+            <ul className="space-y-1 text-xs">
+              <li>• Play the video and listen to the content</li>
+              <li>• Note when each phrase ends</li>
+            </ul>
+            <div className="mt-2 mb-2 bg-blue-100 rounded p-2 text-xs">
+              <p className="font-medium">Example:</p>
+              <p>
+                Someone says: <em>"Hi! Where have you been?"</em> and finishes
+                at second 0:03
+              </p>
+              <p>
+                → Enter the text <strong>"Hi! Where have you been?"</strong> and
+                set the pause time to <strong>0:03</strong>
+              </p>
+            </div>
+            <ul className="space-y-1 text-xs">
+              <li>• Use the YouTube controls to be more precise with timing</li>
+              <li>• Add more segments as needed</li>
+              <li>• Save your lesson when ready!</li>
+            </ul>
+          </div>
+        </div>
+      </div>
       {/* Video Player */}
       <div className="aspect-video bg-black rounded-lg overflow-hidden">
         <iframe
@@ -249,7 +278,7 @@ export default function ManualTranscription({
                 return (
                   <div
                     key={pause.id}
-                    className="flex items-center justify-between bg-white p-3 rounded-lg border"
+                    className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200"
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
                       <span className="font-mono text-xs bg-blue-100 px-2 py-1 rounded">
@@ -300,7 +329,7 @@ export default function ManualTranscription({
         )}
 
         {/* Lesson Title Input */}
-        <div className="pt-4 border-t">
+        <div className="pt-4 border-t border-gray-200">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Lesson Title *
           </label>
@@ -337,24 +366,6 @@ export default function ManualTranscription({
               </>
             )}
           </button>
-        </div>
-      </div>
-
-      {/* Instructions */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-          <div className="text-sm text-blue-800">
-            <p className="font-medium mb-1">Manual subtitle creation:</p>
-            <ul className="space-y-1 text-xs">
-              <li>• Play the video and listen to the content</li>
-              <li>• Set the start time and duration for each subtitle</li>
-              <li>• Enter the text you hear in each segment</li>
-              <li>• Use the play button (▶️) to seek to specific times</li>
-              <li>• Add more segments as needed</li>
-              <li>• Generate your practice session when ready</li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>

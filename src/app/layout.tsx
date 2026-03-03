@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shadow English - Practice English Pronunciation",
+  title: "mimick.io - Practice English Pronunciation",
   description:
     "Practice English pronunciation using the shadow technique with YouTube videos",
 };

@@ -1,4 +1,4 @@
--- Supabase SQL Schema for Shadow English App
+-- Supabase SQL Schema for mimick.io App
 -- Execute these commands in your Supabase SQL editor
 
 -- Enable Row Level Security (RLS)

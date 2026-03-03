@@ -1,8 +1,8 @@
-# Shadow English - Practice English Pronunciation
+# mimick.io - Practice English Pronunciation
 
-A modern web application for practicing English pronunciation using the **shadow technique**. This app allows you to use YouTube videos for structured pronunciation practice with real-time feedback.
+A modern web application for practicing English pronunciation using the **mimicking technique**. This app allows you to use YouTube videos for structured pronunciation practice with real-time feedback.
 
-![Shadow English App](https://img.shields.io/badge/Next.js-16.0.3-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC)
+![mimick.io](https://img.shields.io/badge/Next.js-16.0.3-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC)
 
 ## 🌟 Features
 
@@ -11,7 +11,7 @@ A modern web application for practicing English pronunciation using the **shadow
 - **⏱️ Smart Pause Points**: Automatically generated or manually customized timestamps
 - **🎙️ Speech Recognition**: Real-time voice-to-text conversion for accuracy feedback
 - **📊 Accuracy Scoring**: Get percentage-based feedback on your pronunciation
-- **👥 Shadow Technique**: Practice the proven method of repeating speech immediately after hearing it
+- **👥 mimick Technique**: Practice the proven method of repeating speech immediately after hearing it
 - **📈 Progress Tracking**: See your improvement across multiple practice segments
 - **📱 Responsive Design**: Works seamlessly on desktop and mobile devices
 
@@ -55,8 +55,8 @@ A modern web application for practicing English pronunciation using the **shadow
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/MarcoGrimaldo/shadow-en.git
-cd shadow-en
+git clone https://github.com/MarcoGrimaldo/mimick.git
+cd mimick
 ```
 
 2. Install dependencies:
@@ -79,7 +79,7 @@ npm run dev
    - If it fails, try fallback methods: Smart Intervals, Template-Based, or AI Segments
    - Or manually add pause points with time format `M:SS` (e.g., `0:15`)
 3. **Review & Edit**: Adjust auto-generated pause points if needed
-4. **Start Practice**: Click "Start Shadow Practice" 
+4. **Start Practice**: Click "Start Practice" 
 5. **Follow Instructions**: Listen when video plays, record when it pauses
 6. **Review Results**: Check your accuracy scores and improve!
 
@@ -104,7 +104,7 @@ npm run dev
 ## 🔧 Project Structure
 
 ```
-shadow-en/
+mimick/
 ├── src/
 │   ├── app/
 │   │   ├── api/
@@ -160,7 +160,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - If "Auto Generate" fails, try the fallback methods (Smart Intervals, Template-Based, AI Segments)
 - Fallback methods work even when videos have no captions
 - For best results with original captions, use videos from educational channels
-- All methods generate practice-optimized segments for shadow technique
+- All methods generate practice-optimized segments for mimick technique
 - Manual pause points remain available as the ultimate fallback
 
 ## 📞 Support
@@ -174,4 +174,4 @@ If you encounter any issues or have questions:
 
 **Happy Learning! 🎓** 
 
-Practice regularly with Shadow English to improve your pronunciation and fluency!
+Practice regularly with mimick.io to improve your pronunciation and fluency!

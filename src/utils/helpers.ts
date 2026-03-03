@@ -1,4 +1,4 @@
-// Utility functions for the Shadow English app
+// Utility functions for the mimick.io app
 
 /**
  * Extract YouTube video ID from various YouTube URL formats
