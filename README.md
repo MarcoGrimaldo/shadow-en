@@ -1,8 +1,21 @@
-# mimick.io - Practice English Pronunciation
+# Shadow EN - Practice English Pronunciation
 
-A modern web application for practicing English pronunciation using the **mimicking technique**. This app allows you to use YouTube videos for structured pronunciation practice with real-time feedback.
+A modern **monorepo** application for practicing English pronunciation using the **shadowing technique**. Available as a web app (Next.js) and mobile apps (iOS & Android via Expo).
 
-![mimick.io](https://img.shields.io/badge/Next.js-16.0.3-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC)
+![Next.js](https://img.shields.io/badge/Next.js-16.0-black) ![Expo](https://img.shields.io/badge/Expo-52-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue) ![Turborepo](https://img.shields.io/badge/Turborepo-2.3-EF4444)
+
+## 📁 Project Structure
+
+```
+shadow-en/
+├── apps/
+│   ├── web/          # Next.js web application
+│   └── mobile/       # Expo React Native app (iOS & Android)
+├── packages/
+│   └── shared/       # Shared types, utilities, and Supabase config
+├── turbo.json        # Turborepo configuration
+└── package.json      # Root workspace configuration
+```
 
 ## 🌟 Features
 
@@ -36,18 +49,34 @@ A modern web application for practicing English pronunciation using the **mimick
 
 ## 🛠️ Technology Stack
 
-- **Framework**: Next.js 16.0.3 with App Router
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS v4
-- **Icons**: Lucide React
-- **Speech Recognition**: Web Speech API
-- **Video**: YouTube Embed API
+### Monorepo Tools
+- **Turborepo**: Fast, incremental builds
+- **npm workspaces**: Package management
+
+### Web App (`apps/web`)
+- **Next.js 16**: React framework with App Router
+- **TypeScript**: Type-safe development
+- **Tailwind CSS v4**: Utility-first styling
+- **Supabase**: Authentication & database
+
+### Mobile App (`apps/mobile`)
+- **Expo SDK 52**: React Native development
+- **Expo Router**: File-based navigation
+- **React Native**: Cross-platform mobile UI
+- **Expo AV**: Audio recording
+
+### Shared Package (`packages/shared`)
+- **Types**: User, Lesson, PausePoint interfaces
+- **Utilities**: YouTube helpers, text accuracy calculation
+- **Supabase**: Client configuration
 
 ## 📋 Prerequisites
 
 - Node.js 18+ 
-- Modern web browser with Speech Recognition support (Chrome recommended)
-- Microphone access permission
+- npm 10+
+- For mobile development:
+  - iOS: macOS with Xcode
+  - Android: Android Studio
 
 ## 🏃‍♂️ Getting Started
 
@@ -55,8 +84,8 @@ A modern web application for practicing English pronunciation using the **mimick
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/MarcoGrimaldo/mimick.git
-cd mimick
+git clone https://github.com/MarcoGrimaldo/shadow-en.git
+cd shadow-en
 ```
 
 2. Install dependencies:
@@ -64,14 +93,54 @@ cd mimick
 npm install
 ```
 
-3. Start the development server:
+3. Set up environment variables:
 ```bash
-npm run dev
+# For web app
+cp apps/web/.env.example apps/web/.env.local
+
+# For mobile app
+cp apps/mobile/.env.example apps/mobile/.env
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser
+4. Start development:
+```bash
+# Run all apps
+npm run dev
 
-### Usage
+# Run only web
+npm run dev:web
+
+# Run only mobile
+npm run dev:mobile
+```
+
+5. Open:
+   - Web: [http://localhost:3000](http://localhost:3000)
+   - Mobile: Scan QR code with Expo Go app
+
+### Building for Production
+
+```bash
+# Build all apps
+npm run build
+
+# Build only web
+npm run build:web
+```
+
+### Mobile App Deployment
+
+```bash
+cd apps/mobile
+
+# Build for iOS
+npm run build:ios
+
+# Build for Android
+npm run build:android
+```
+
+## 📱 Web App Usage
 
 1. **Enter Video URL**: Paste a YouTube video link (max 1 minute duration)
 2. **Generate Subtitles**: 

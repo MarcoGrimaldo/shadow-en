@@ -1,39 +1,27 @@
 {
-  "name": "mimick",
+  "name": "shadow-en",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-progress": "^1.1.8",
-    "@supabase/ssr": "^0.7.0",
-    "@supabase/supabase-js": "^2.83.0",
-    "@types/youtube": "^0.1.2",
-    "assemblyai": "^4.19.0",
-    "axios": "^1.13.2",
-    "googleapis": "^166.0.0",
-    "lucide-react": "^0.554.0",
-    "next": "^16.0.10",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
-    "uuid": "^13.0.0",
-    "youtube-transcript": "^1.2.1",
-    "ytdl-core": "^4.11.5"
+    "dev": "turbo dev",
+    "dev:web": "turbo dev --filter=@shadow-en/web",
+    "dev:mobile": "turbo dev --filter=@shadow-en/mobile",
+    "build": "turbo build",
+    "build:web": "turbo build --filter=@shadow-en/web",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "clean": "turbo clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "babel-plugin-react-compiler": "1.0.0",
-    "eslint": "^9",
-    "eslint-config-next": "^16.0.10",
-    "tailwindcss": "^4",
+    "turbo": "^2.3.0",
     "typescript": "^5"
+  },
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=18"
   }
 }

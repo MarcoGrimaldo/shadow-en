@@ -14,7 +14,9 @@
 /coverage
 
 # next.js
-/.next/
+apps/web/.next/
+apps/web/build/
+apps/web/node_modules/
 /out/
 
 # production
@@ -39,3 +41,26 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Turbo
+.turbo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Mobile / Expo
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+.expo/
+expo-env.d.ts
+apps/mobile/.expo/
+apps/mobile/web-build/
+apps/mobile/node_modules/
