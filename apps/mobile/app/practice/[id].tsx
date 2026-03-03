@@ -18,7 +18,7 @@ import {
   getAccuracyColor,
   getAccuracyMessage,
 } from "@shadow-en/shared";
-import { supabase } from "../src/lib/supabase";
+import { supabase } from "../../src/lib/supabase";
 
 export default function PracticeSessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

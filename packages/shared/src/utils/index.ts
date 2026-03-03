@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 // Utility functions shared between web and mobile apps
 
 /**

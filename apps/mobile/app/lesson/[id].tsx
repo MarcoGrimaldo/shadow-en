@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Lesson, getYouTubeThumbnail, formatTime } from "@shadow-en/shared";
-import { supabase } from "../src/lib/supabase";
+import { supabase } from "../../src/lib/supabase";
 
 export default function LessonDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
     "strict": true,
     "target": "ESNext",
     "module": "ESNext",
@@ -11,17 +13,10 @@
     "resolveJsonModule": true,
     "noEmit": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@shadow-en/shared": [
-        "../../packages/shared/src"
-      ],
-      "@shadow-en/shared/*": [
-        "../../packages/shared/src/*"
-      ]
-    },
-    "baseUrl": "."
+      "@/*": ["./src/*"],
+      "@shadow-en/shared": ["../../packages/shared/src"],
+      "@shadow-en/shared/*": ["../../packages/shared/src/*"]
+    }
   },
   "include": [
     "**/*.ts",
